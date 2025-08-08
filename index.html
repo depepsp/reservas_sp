@@ -5,7 +5,7 @@
   <title>Reserva da Sala de Pesquisadores - Depep/SP</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <!-- flatpickr CSS/JS (para o campo de DATA) -->
+  <!-- flatpickr para o campo de DATA -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
   <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 
@@ -56,7 +56,7 @@
     /* Calendário sobrepõe inputs e fica junto ao campo */
     .flatpickr-calendar { z-index: 9999 !important; }
 
-    /* Overlay de carregamento na frente de tudo */
+    /* Overlay de carregamento à frente de tudo */
     #loading {
       position: fixed; inset: 0;
       background: rgba(255,255,255,0.75);
@@ -86,7 +86,7 @@
     </div>
 
     <form id="reservaForm" autocomplete="off">
-      <!-- Tipo primeiro, para calcular bloqueios corretos -->
+      <!-- Tipo primeiro -->
       <label>Você é:
         <select name="tipo" required id="tipoSelect">
           <option value="">Selecione...</option>
@@ -122,8 +122,8 @@
   </div>
 
   <script>
-    /*** CONFIG: COLE AQUI O URL DO SEU WEB APP (termina com /exec) ***/
-    const WEB_APP_URL = "https://script.google.com/macros/s/SEU_DEPLOY_ID/exec"; // <-- SUBSTITUA
+    /***** CONFIG: COLE AQUI O URL DO SEU WEB APP (termina com /exec) *****/
+    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyx4AvyTzL4zPZ02WKXyX-AFFjDq76yCVb-96v83Du2LnW0X-TaoR-eN1C_3jCDKco/exec"; // <-- SUBSTITUA
 
     const form        = document.getElementById("reservaForm");
     const erroDiv     = document.getElementById("erroMsg");
@@ -173,9 +173,9 @@
     function disableFn(date) {
       if (date.getDay() === 0 || date.getDay() === 6) return true; // fim de semana
       if (date < today) return true;                                // passado
-      if (date > maxDate) return true;                               // >60 dias
-      if (!tipoSel.value) return true;                               // sem tipo → bloqueia
-      const d = flatpickr.formatDate(date, "Y-m-d");                 // lotados (backend)
+      if (date > maxDate) return true;                              // >60 dias
+      if (!tipoSel.value) return true;                              // sem tipo → bloqueia
+      const d = flatpickr.formatDate(date, "Y-m-d");                // lotados (backend)
       return diasLotados.includes(d);
     }
 
@@ -190,29 +190,27 @@
       maxDate: maxDate
     });
 
-    // --------- CHAMADAS AO BACKEND (Apps Script) VIA FETCH ---------
-
+    /******** CHAMADAS AO BACKEND (Apps Script) — SEM PREFLIGHT ********/
+    // GET simples (action em querystring) — CORS simples
     async function fetchDiasLotados(tipo) {
-      const url = `${WEB_APP_URL}?action=diasLotados&tipo=${encodeURIComponent(tipo)}`;
+      const url = `${WEB_APP_URL}?action=diasLotados&tipo=${encodeURIComponent(tipo)}&t=${Date.now()}`;
       const r = await fetch(url, { method: "GET" });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      // Espera um JSON tipo: ["2025-08-12","2025-08-13",...]
-      return await r.json();
+      return await r.json(); // array de strings 'yyyy-MM-dd'
     }
 
+    // POST como text/plain (request simples, sem preflight)
     async function enviarReserva(payload) {
       const r = await fetch(WEB_APP_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "text/plain;charset=UTF-8" },
         body: JSON.stringify({ action: "reservar", ...payload })
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      // Espera JSON: { status: "ok" } ou { status:"erro", mensagem:"..." }
-      return await r.json();
+      return await r.json(); // { status:"ok" } ou { status:"erro", mensagem:"..." }
     }
 
-    // --------- LÓGICA DE UI ---------
-
+    /************************* LÓGICA DE UI *************************/
     async function atualizarDiasLotados() {
       const tipo = tipoSel.value;
       if (!tipo) {
@@ -255,6 +253,7 @@
       }
 
       const dados = Object.fromEntries(new FormData(form));
+
       setLoading(true);
       try {
         const resp = await enviarReserva(dados);
@@ -264,8 +263,8 @@
           erroDiv.style.color = "green";
           erroDiv.textContent = "Reserva registrada com sucesso.";
           form.reset();
-          dataInput.disabled = true; // obriga escolher tipo de novo
-          await atualizarDiasLotados(); // reprocessa bloqueios após nova reserva
+          dataInput.disabled = true;  // obriga escolher tipo de novo
+          await atualizarDiasLotados();
         }
       } catch (err) {
         erroDiv.textContent = "Erro interno: " + err.message;
@@ -274,9 +273,7 @@
       }
     });
 
-    // Dica: se quiser iniciar já pedindo o tipo, não chame atualizarDiasLotados(); o usuário escolhe e então carrega.
+    // dica: deixe o usuário escolher o tipo; só então carregue disponibilidade
   </script>
 </body>
 </html>
-
-
