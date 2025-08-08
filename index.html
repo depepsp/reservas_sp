@@ -1,310 +1,282 @@
-<!-- index.html: Formulário Web App para agendamento -->
 <!DOCTYPE html>
-<html>
-  <head>
-    <base target="_top">
-    <style>
-      body { font-family: Arial, sans-serif; padding: 20px; }
-      label { display: block; margin-top: 10px; }
-      input, select {
-                      width: 100%;
-                      max-width: 250px;
-                      padding: 8px;
-                      margin-top: 5px;
-                      box-sizing: border-box;
-                    }
-      button { margin-top: 20px; padding: 10px 20px; }
-      .error { color: red; margin-top: 10px; }
-    </style>
-  </head>
-  <body>
-    <h2>Reserva da Sala de Pesquisadores - BC/SP</h2>
-    <form id="reservaForm">
-      <label>Nome completo:
-        <input type="text" name="nome" required>
-      </label>
-      <label>Data da reserva:
-        <input type="date" name="data" required>
-      </label>
-      <label>Hora de início:
-        <input type="time" name="inicio" required>
-      </label>
-      <label>Hora de término:
-        <input type="time" name="fim" required>
-      </label>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Reserva da Sala de Pesquisadores - Depep/SP</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- flatpickr CSS/JS (para o campo de DATA) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
+  <style>
+    :root { --maxw: 640px; }
+    html, body { height: 100%; }
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #fff;
+    }
+    .wrap {
+      width: 100%;
+      max-width: var(--maxw);
+      padding: 24px;
+      box-sizing: border-box;
+      text-align: center;
+    }
+    h2 { margin: 0 0 16px 0; }
+
+    form {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+    }
+    label {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      max-width: 360px;
+      text-align: left;
+      position: relative; /* calendário fica logo abaixo */
+    }
+    input, select, button {
+      padding: 8px;
+      margin-top: 6px;
+      box-sizing: border-box;
+      width: 100%;
+    }
+    button { width: auto; padding: 10px 20px; cursor: pointer; }
+    .error { color: red; margin-top: 6px; }
+
+    /* Calendário sobrepõe inputs e fica junto ao campo */
+    .flatpickr-calendar { z-index: 9999 !important; }
+
+    /* Overlay de carregamento na frente de tudo */
+    #loading {
+      position: fixed; inset: 0;
+      background: rgba(255,255,255,0.75);
+      display: none;
+      align-items: center; justify-content: center;
+      font-weight: 600; z-index: 1000000; pointer-events: all;
+      backdrop-filter: blur(1px);
+    }
+    .spinner {
+      width: 28px; height: 28px; border: 3px solid #ccc;
+      border-top-color: #555; border-radius: 50%;
+      animation: spin 0.9s linear infinite; margin-right: 10px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loading .wrap-loading { display: flex; align-items: center; font-size: 16px; color: #333; }
+
+    .calendar-link { margin-top: 12px; font-size: 14px; }
+    .calendar-link a { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h2>Reserva da Sala de Pesquisadores - Depep/SP</h2>
+
+    <div id="loading" aria-live="polite" aria-busy="true">
+      <div class="wrap-loading"><div class="spinner"></div>Carregando…</div>
+    </div>
+
+    <form id="reservaForm" autocomplete="off">
+      <!-- Tipo primeiro, para calcular bloqueios corretos -->
       <label>Você é:
-        <select name="tipo" required>
+        <select name="tipo" required id="tipoSelect">
           <option value="">Selecione...</option>
           <option value="Pesquisador externo ou Estagiário do BC">Pesquisador externo ou Estagiário do BC</option>
           <option value="Servidor do Depep">Servidor do Depep</option>
         </select>
       </label>
+
+      <label id="dataLabel">Data da reserva:
+        <input type="text" name="data" required id="dataInput" placeholder="Selecione a data" disabled>
+      </label>
+
+      <label>Hora de início (a partir das 09:00):
+        <select name="inicio" required id="inicioSelect"></select>
+      </label>
+
+      <label>Hora de término (até as 18:00):
+        <select name="fim" required id="fimSelect"></select>
+      </label>
+
+      <label>Nome completo:
+        <input type="text" name="nome" required>
+      </label>
+
       <div class="error" id="erroMsg"></div>
-      <button type="submit">Reservar</button>
-    </form>
-    <script>
-      const form = document.getElementById("reservaForm");
-      const erroDiv = document.getElementById("erroMsg");
-<!-- index.html: Formulário Web App para agendamento -->
-<!DOCTYPE html>
-<html>
-  <head>
-    <base target="_top">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reserva da Sala de Pesquisadores - Depep/SP</title>
+      <button type="submit" id="btnEnviar">Reservar</button>
 
-    <!-- flatpickr CSS/JS (para o campo de DATA apenas) -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-
-    <style>
-      :root { --maxw: 640px; }
-      html, body { height: 100%; }
-      body {
-        font-family: Arial, sans-serif;
-        margin: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: #fff;
-      }
-      .wrap {
-        width: 100%;
-        max-width: var(--maxw);
-        padding: 24px;
-        box-sizing: border-box;
-        text-align: center;
-      }
-      h2 { margin: 0 0 16px 0; }
-      form {
-        display: inline-flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 10px;
-        width: 100%;
-      }
-      label {
-        display: flex;
-        flex-direction: column;
-        width: 100%;
-        max-width: 360px;
-        text-align: left;
-        position: relative; /* calendário fica logo abaixo */
-      }
-      input, select, button {
-        padding: 8px;
-        margin-top: 6px;
-        box-sizing: border-box;
-        width: 100%;
-      }
-      button { width: auto; padding: 10px 20px; cursor: pointer; }
-      .error { color: red; margin-top: 6px; }
-
-      /* Calendário sobrepõe inputs e fica junto ao campo */
-      .flatpickr-calendar { z-index: 9999 !important; }
-
-      /* Overlay de carregamento na frente de tudo */
-      #loading {
-        position: fixed; inset: 0;
-        background: rgba(255,255,255,0.75);
-        display: none;
-        align-items: center; justify-content: center;
-        font-weight: 600; z-index: 1000000; pointer-events: all;
-        backdrop-filter: blur(1px);
-      }
-      .spinner {
-        width: 28px; height: 28px; border: 3px solid #ccc;
-        border-top-color: #555; border-radius: 50%;
-        animation: spin 0.9s linear infinite; margin-right: 10px;
-      }
-      @keyframes spin { to { transform: rotate(360deg); } }
-      #loading .wrap-loading { display: flex; align-items: center; font-size: 16px; color: #333; }
-
-      .calendar-link { margin-top: 12px; font-size: 14px; }
-      .calendar-link a { text-decoration: underline; }
-    </style>
-  </head>
-  <body>
-    <div class="wrap">
-      <h2>Reserva da Sala de Pesquisadores - Depep/SP</h2>
-
-      <div id="loading" aria-live="polite" aria-busy="true">
-        <div class="wrap-loading"><div class="spinner"></div>Carregando…</div>
+      <div class="calendar-link">
+        Para consultar o calendário da Sala de Pesquisadores, <a target="_blank" rel="noopener"
+        href="https://calendar.google.com/calendar/u/0/embed?src=8b41303a9fd533be7c17e4a4fd1742c5f87d65f1cf0d81f90e0332d48c7f7495@group.calendar.google.com&ctz=America/Sao_Paulo">clique aqui</a>.
       </div>
+    </form>
+  </div>
 
-      <form id="reservaForm">
-        <!-- Tipo primeiro, para calcular bloqueios corretos -->
-        <label>Você é:
-          <select name="tipo" required id="tipoSelect">
-            <option value="">Selecione...</option>
-            <option value="Pesquisador externo ou Estagiário do BC">Pesquisador externo ou Estagiário do BC</option>
-            <option value="Servidor do Depep">Servidor do Depep</option>
-          </select>
-        </label>
+  <script>
+    /*** CONFIG: COLE AQUI O URL DO SEU WEB APP (termina com /exec) ***/
+    const WEB_APP_URL = "https://script.google.com/macros/s/SEU_DEPLOY_ID/exec"; // <-- SUBSTITUA
 
-        <label id="dataLabel">Data da reserva:
-          <input type="text" name="data" required id="dataInput" placeholder="Selecione a data" disabled>
-        </label>
+    const form        = document.getElementById("reservaForm");
+    const erroDiv     = document.getElementById("erroMsg");
+    const dataInput   = document.getElementById("dataInput");
+    const dataLabel   = document.getElementById("dataLabel");
+    const tipoSel     = document.getElementById("tipoSelect");
+    const inicioSel   = document.getElementById("inicioSelect");
+    const fimSel      = document.getElementById("fimSelect");
+    const btnEnviar   = document.getElementById("btnEnviar");
+    const loading     = document.getElementById("loading");
 
-        <label>Hora de início (a partir das 09:00):
-          <select name="inicio" required id="inicioSelect"></select>
-        </label>
+    // Parâmetros alinhados com o backend
+    const HORIZON_DAYS = 60;
+    const OPEN_TIME = "09:00";
+    const CLOSE_TIME = "18:00";
 
-        <label>Hora de término (até as 18:00):
-          <select name="fim" required id="fimSelect"></select>
-        </label>
+    let diasLotados = [];
 
-        <label>Nome completo:
-          <input type="text" name="nome" required>
-        </label>
+    // Loading overlay
+    function setLoading(on) {
+      loading.style.display = on ? "flex" : "none";
+      document.body.style.cursor = on ? "progress" : "default";
+      btnEnviar.disabled = !!on;
+    }
 
-        <div class="error" id="erroMsg"></div>
-        <button type="submit" id="btnEnviar">Reservar</button>
-
-        <div class="calendar-link">
-          Para consultar o calendário da Sala de Pesquisadores, <a target="_blank" rel="noopener"
-          href="https://calendar.google.com/calendar/u/0/embed?src=8b41303a9fd533be7c17e4a4fd1742c5f87d65f1cf0d81f90e0332d48c7f7495@group.calendar.google.com&ctz=America/Sao_Paulo">clique aqui</a>.
-        </div>
-      </form>
-    </div>
-
-    <script>
-      const form        = document.getElementById("reservaForm");
-      const erroDiv     = document.getElementById("erroMsg");
-      const dataInput   = document.getElementById("dataInput");
-      const dataLabel   = document.getElementById("dataLabel");
-      const tipoSel     = document.getElementById("tipoSelect");
-      const inicioSel   = document.getElementById("inicioSelect");
-      const fimSel      = document.getElementById("fimSelect");
-      const btnEnviar   = document.getElementById("btnEnviar");
-      const loading     = document.getElementById("loading");
-
-      // Parâmetros alinhados com o backend
-      const HORIZON_DAYS = 60;
-      const OPEN_TIME = "09:00";
-      const CLOSE_TIME = "18:00";
-
-      let diasLotados = [];
-
-      // Loading overlay
-      function setLoading(on) {
-        loading.style.display = on ? "flex" : "none";
-        document.body.style.cursor = on ? "progress" : "default";
-        btnEnviar.disabled = !!on;
+    // Popular selects com opções de hora em hora (09:00..18:00)
+    function populateTimeSelect(selectEl, startHour = 9, endHour = 18) {
+      selectEl.innerHTML = "";
+      const first = document.createElement("option");
+      first.value = ""; first.textContent = "Selecione...";
+      selectEl.appendChild(first);
+      for (let h = startHour; h <= endHour; h++) {
+        const hh = String(h).padStart(2, "0");
+        const opt = document.createElement("option");
+        opt.value = `${hh}:00`;
+        opt.textContent = `${hh}:00`;
+        selectEl.appendChild(opt);
       }
+    }
+    populateTimeSelect(inicioSel);
+    populateTimeSelect(fimSel);
 
-      // ---- Popular selects com opções de hora em hora (09:00..18:00) ----
-      function populateTimeSelect(selectEl, startHour = 9, endHour = 18) {
-        selectEl.innerHTML = "";
-        const first = document.createElement("option");
-        first.value = ""; first.textContent = "Selecione...";
-        selectEl.appendChild(first);
+    // Datas: hoje até +60 dias (igual ao backend)
+    const today = new Date(); today.setHours(0,0,0,0);
+    const maxDate = new Date(today.getTime() + HORIZON_DAYS*24*60*60*1000);
 
-        for (let h = startHour; h <= endHour; h++) {
-          const hh = String(h).padStart(2, "0");
-          const opt = document.createElement("option");
-          opt.value = `${hh}:00`;
-          opt.textContent = `${hh}:00`;
-          selectEl.appendChild(opt);
-        }
-      }
-      populateTimeSelect(inicioSel);
-      populateTimeSelect(fimSel);
+    function disableFn(date) {
+      if (date.getDay() === 0 || date.getDay() === 6) return true; // fim de semana
+      if (date < today) return true;                                // passado
+      if (date > maxDate) return true;                               // >60 dias
+      if (!tipoSel.value) return true;                               // sem tipo → bloqueia
+      const d = flatpickr.formatDate(date, "Y-m-d");                 // lotados (backend)
+      return diasLotados.includes(d);
+    }
 
-      // ---- Datas: hoje até +60 dias (igual ao backend) ----
-      const today = new Date(); today.setHours(0,0,0,0);
-      const maxDate = new Date(today.getTime() + HORIZON_DAYS*24*60*60*1000);
+    // Datepicker colado ao campo (apenas DATA)
+    let fpDate = flatpickr("#dataInput", {
+      dateFormat: "Y-m-d",
+      disable: [ disableFn ],
+      static: true,
+      appendTo: dataLabel,
+      positionElement: dataInput,
+      minDate: today,
+      maxDate: maxDate
+    });
 
-      function disableFn(date) {
-        if (date.getDay() === 0 || date.getDay() === 6) return true; // fim de semana
-        if (date < today) return true;                                // passado
-        if (date > maxDate) return true;                               // >60 dias
-        if (!tipoSel.value) return true;                               // sem tipo → bloqueia
-        const d = flatpickr.formatDate(date, "Y-m-d");                 // lotados (backend)
-        return diasLotados.includes(d);
-      }
+    // --------- CHAMADAS AO BACKEND (Apps Script) VIA FETCH ---------
 
-      // Datepicker colado ao campo (apenas DATA)
-      let fpDate = flatpickr("#dataInput", {
-        dateFormat: "Y-m-d",
-        disable: [ disableFn ],
-        static: true,
-        appendTo: dataLabel,
-        positionElement: dataInput,
-        minDate: today,
-        maxDate: maxDate
+    async function fetchDiasLotados(tipo) {
+      const url = `${WEB_APP_URL}?action=diasLotados&tipo=${encodeURIComponent(tipo)}`;
+      const r = await fetch(url, { method: "GET" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      // Espera um JSON tipo: ["2025-08-12","2025-08-13",...]
+      return await r.json();
+    }
+
+    async function enviarReserva(payload) {
+      const r = await fetch(WEB_APP_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reservar", ...payload })
       });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      // Espera JSON: { status: "ok" } ou { status:"erro", mensagem:"..." }
+      return await r.json();
+    }
 
-      // Carrega dias lotados do backend
-      function atualizarDiasLotados() {
-        const tipo = tipoSel.value;
-        if (!tipo) {
-          dataInput.disabled = true;
-          diasLotados = [];
-          fpDate.set("disable", [ disableFn ]);
-          fpDate.redraw();
-          return;
-        }
+    // --------- LÓGICA DE UI ---------
 
-        dataInput.disabled = false;
-        setLoading(true);
-        google.script.run
-          .withSuccessHandler((datas) => {
-            diasLotados = Array.isArray(datas) ? datas : [];
-            fpDate.set("disable", [ disableFn ]);
-            fpDate.redraw();
-            // Se a data atual ficou bloqueada, limpa
-            if (dataInput.value && diasLotados.includes(dataInput.value)) {
-              fpDate.clear();
-            }
-            setLoading(false);
-          })
-          .withFailureHandler((err) => {
-            erroDiv.textContent = "Erro ao carregar disponibilidade: " + err.message;
-            setLoading(false);
-          })
-          .getDiasLotados(tipo);
+    async function atualizarDiasLotados() {
+      const tipo = tipoSel.value;
+      if (!tipo) {
+        dataInput.disabled = true;
+        diasLotados = [];
+        fpDate.set("disable", [ disableFn ]);
+        fpDate.redraw();
+        return;
       }
 
-      tipoSel.addEventListener("change", atualizarDiasLotados);
-
-      // Envio do formulário
-      form.addEventListener("submit", (e) => {
-        e.preventDefault();
-        erroDiv.style.color = "red";
-        erroDiv.textContent = "";
-
-        // Validação simples dos selects
-        if (!inicioSel.value || !fimSel.value) {
-          erroDiv.textContent = "Selecione as horas de início e término.";
-          return;
+      dataInput.disabled = false;
+      setLoading(true);
+      try {
+        const datas = await fetchDiasLotados(tipo);
+        diasLotados = Array.isArray(datas) ? datas : [];
+        fpDate.set("disable", [ disableFn ]);
+        fpDate.redraw();
+        // Se a data atual ficou bloqueada, limpa
+        if (dataInput.value && diasLotados.includes(dataInput.value)) {
+          fpDate.clear();
         }
+      } catch (err) {
+        erroDiv.textContent = "Erro ao carregar disponibilidade: " + err.message;
+      } finally {
+        setLoading(false);
+      }
+    }
 
-        // Monta os dados no mesmo formato esperado pelo backend
-        const dados = Object.fromEntries(new FormData(form));
-        // (dados.inicio e dados.fim já estão no formato HH:MM)
+    tipoSel.addEventListener("change", atualizarDiasLotados);
 
-        setLoading(true);
-        google.script.run
-          .withSuccessHandler((resposta) => {
-            if (resposta.status === "erro") {
-              erroDiv.textContent = resposta.mensagem;
-            } else {
-              erroDiv.style.color = "green";
-              erroDiv.textContent = "Reserva registrada com sucesso.";
-              form.reset();
-              dataInput.disabled = true; // obriga escolher tipo de novo
-              atualizarDiasLotados();    // reprocessa bloqueios após nova reserva
-            }
-            setLoading(false);
-          })
-          .withFailureHandler((erro) => {
-            erroDiv.textContent = "Erro interno: " + erro.message;
-            setLoading(false);
-          })
-          .processarFormulario(dados);
-      });
-    </script>
-  </body>
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      erroDiv.style.color = "red";
+      erroDiv.textContent = "";
+
+      // Validação simples dos selects
+      if (!inicioSel.value || !fimSel.value) {
+        erroDiv.textContent = "Selecione as horas de início e término.";
+        return;
+      }
+
+      const dados = Object.fromEntries(new FormData(form));
+      setLoading(true);
+      try {
+        const resp = await enviarReserva(dados);
+        if (resp.status === "erro") {
+          erroDiv.textContent = resp.mensagem || "Erro ao reservar.";
+        } else {
+          erroDiv.style.color = "green";
+          erroDiv.textContent = "Reserva registrada com sucesso.";
+          form.reset();
+          dataInput.disabled = true; // obriga escolher tipo de novo
+          await atualizarDiasLotados(); // reprocessa bloqueios após nova reserva
+        }
+      } catch (err) {
+        erroDiv.textContent = "Erro interno: " + err.message;
+      } finally {
+        setLoading(false);
+      }
+    });
+
+    // Dica: se quiser iniciar já pedindo o tipo, não chame atualizarDiasLotados(); o usuário escolhe e então carrega.
+  </script>
+</body>
 </html>
+
 
