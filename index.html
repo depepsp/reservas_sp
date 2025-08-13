@@ -53,10 +53,9 @@
     button { width: auto; padding: 10px 20px; cursor: pointer; }
     .error { color: red; margin-top: 6px; min-height: 1.2em; }
 
-    /* Calendário sobrepõe inputs e fica junto ao campo */
     .flatpickr-calendar { z-index: 9999 !important; }
 
-    /* Overlay de carregamento à frente de tudo */
+    /* Loader do FORM */
     #loading {
       position: fixed; inset: 0;
       background: rgba(255,255,255,0.75);
@@ -76,21 +75,47 @@
     .calendar-link { margin-top: 12px; font-size: 14px; }
     .calendar-link a { text-decoration: underline; cursor: pointer; }
 
-    /* Seção da agenda (lista) */
-    #agenda { margin-top: 24px; text-align: left; }
-    #agenda h3 { text-align: center; margin: 16px 0 8px; }
+    /* ===== Modal da AGENDA ===== */
+    #agendaModal { position: fixed; inset: 0; display: none; z-index: 2000000; }
+    #agendaModal.active { display: block; }
+    #agendaModal .backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.35); }
+    #agendaModal .panel {
+      position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+      width: min(92vw, 760px); max-height: 85vh;
+      background: #fff; border-radius: 10px; box-shadow: 0 12px 28px rgba(0,0,0,.2);
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .panel-header {
+      padding: 12px 14px; border-bottom: 1px solid #eee; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    }
+    .panel-title { margin: 0; font-size: 18px; font-weight: 700; }
+    .panel-actions { display: flex; gap: 8px; }
+    .panel-actions button {
+      padding: 8px 12px; border: 1px solid #ddd; background: #f7f7f7; border-radius: 6px; cursor: pointer;
+    }
+    .panel-close {
+      border: none; background: transparent; font-size: 22px; line-height: 1; cursor: pointer; margin-left: 4px;
+    }
+    .panel-body { padding: 12px 16px; overflow: auto; }
+    .modal-loading { display: flex; align-items: center; justify-content: center; color: #333; font-weight: 600; height: 240px; }
+    .modal-loading .spinner { margin-right: 10px; }
+
+    .dia { margin-top: 16px; }
+    .dia-titulo { font-weight: 700; margin-bottom: 6px; }
+    .ev { border: 1px solid #ddd; border-left: 6px solid; padding: 6px 8px; margin: 6px 0; border-radius: 6px; background: #fafafa; }
+    .ev .hora { font-weight: 600; margin-right: 6px; }
   </style>
 </head>
 <body>
   <div class="wrap">
     <h2>Reserva da Sala de Pesquisadores do Depep-SP</h2>
 
+    <!-- Loader do FORM -->
     <div id="loading" aria-live="polite" aria-busy="true">
       <div class="wrap-loading"><div class="spinner"></div>Carregando…</div>
     </div>
 
     <form id="reservaForm" autocomplete="off">
-      <!-- Tipo primeiro -->
       <label>Você é:
         <select name="tipo" required id="tipoSelect">
           <option value="">Selecione...</option>
@@ -121,32 +146,42 @@
       <div class="calendar-link">
         Para consultar o calendário da Sala de Pesquisadores,
         <a href="#agenda" onclick="initAgenda(event)">clique aqui</a>.
-        <!-- Se quiser também abrir a versão SSR em nova aba, descomente: -->
-        <!-- <span> | </span><a target="_blank" rel="noopener" href="https://script.google.com/macros/s/AKfycbyx4AvyTzL4zPZ02WKXyX-AFFjDq76yCVb-96v83Du2LnW0X-TaoR-eN1C_3jCDKco/exec?action=agenda">abrir em nova aba</a> -->
       </div>
     </form>
+  </div>
 
-    <!-- Agenda (carrega sob demanda via JSON) -->
-    <section id="agenda">
-      <h3>Agenda pública – próximos 60 dias</h3>
-      <div id="agendaContainer">Clique no link acima para carregar a agenda…</div>
-    </section>
+  <!-- ===== Modal da AGENDA ===== -->
+  <div id="agendaModal" aria-hidden="true">
+    <div class="backdrop" onclick="closeAgenda()"></div>
+    <div class="panel" role="dialog" aria-modal="true" aria-labelledby="agendaTitle">
+      <div class="panel-header">
+        <div class="panel-title" id="agendaTitle">Agenda pública – próximos 60 dias</div>
+        <div class="panel-actions">
+          <button type="button" id="btnRefreshAgenda" title="Recarregar a agenda">Atualizar</button>
+          <button type="button" onclick="closeAgenda()">Voltar ao formulário</button>
+          <button class="panel-close" type="button" aria-label="Fechar" onclick="closeAgenda()">×</button>
+        </div>
+      </div>
+      <div id="agendaBody" class="panel-body">
+        <div class="modal-loading"><div class="spinner"></div>Carregando…</div>
+      </div>
+    </div>
   </div>
 
   <script>
-    /***** CONFIG: COLE AQUI O URL DO SEU WEB APP (termina com /exec) *****/
-    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyx4AvyTzL4zPZ02WKXyX-AFFjDq76yCVb-96v83Du2LnW0X-TaoR-eN1C_3jCDKco/exec"; // <-- SUBSTITUA
-    const AGENDA_API_URL = "https://script.google.com/macros/s/AKfycbyx4AvyTzL4zPZ02WKXyX-AFFjDq76yCVb-96v83Du2LnW0X-TaoR-eN1C_3jCDKco/exec"; // <-- SUBSTITUA (pode ser o mesmo)
+    /* CONFIG: URLs do seu Web App (terminam com /exec) */
+    const WEB_APP_URL    = "https://script.google.com/macros/s/AKfycbyx4AvyTzL4zPZ02WKXyX-AFFjDq76yCVb-96v83Du2LnW0X-TaoR-eN1C_3jCDKco/exec"; // formulário
+    const AGENDA_API_URL = "https://script.google.com/macros/s/AKfycbyx4AvyTzL4zPZ02WKXyX-AFFjDq76yCVb-96v83Du2LnW0X-TaoR-eN1C_3jCDKco/exec"; // agenda JSON (pode ser o mesmo)
 
-    const form        = document.getElementById("reservaForm");
-    const erroDiv     = document.getElementById("erroMsg");
-    const dataInput   = document.getElementById("dataInput");
-    const dataLabel   = document.getElementById("dataLabel");
-    const tipoSel     = document.getElementById("tipoSelect");
-    const inicioSel   = document.getElementById("inicioSelect");
-    const fimSel      = document.getElementById("fimSelect");
-    const btnEnviar   = document.getElementById("btnEnviar");
-    const loading     = document.getElementById("loading");
+    const form      = document.getElementById("reservaForm");
+    const erroDiv   = document.getElementById("erroMsg");
+    const dataInput = document.getElementById("dataInput");
+    const dataLabel = document.getElementById("dataLabel");
+    const tipoSel   = document.getElementById("tipoSelect");
+    const inicioSel = document.getElementById("inicioSelect");
+    const fimSel    = document.getElementById("fimSelect");
+    const btnEnviar = document.getElementById("btnEnviar");
+    const loading   = document.getElementById("loading");
 
     // Parâmetros alinhados com o backend
     const HORIZON_DAYS = 60;
@@ -155,14 +190,14 @@
 
     let diasLotados = [];
 
-    // Loading overlay
+    // Loader do FORM
     function setLoading(on) {
       loading.style.display = on ? "flex" : "none";
       document.body.style.cursor = on ? "progress" : "default";
       btnEnviar.disabled = !!on;
     }
 
-    // Popular selects com opções de hora em hora (09:00..18:00)
+    // Horários (09:00..18:00)
     function populateTimeSelect(selectEl, startHour = 9, endHour = 18) {
       selectEl.innerHTML = "";
       const first = document.createElement("option");
@@ -179,20 +214,19 @@
     populateTimeSelect(inicioSel);
     populateTimeSelect(fimSel);
 
-    // Datas: hoje até +60 dias (igual ao backend)
+    // Datas: hoje até +60 dias
     const today = new Date(); today.setHours(0,0,0,0);
     const maxDate = new Date(today.getTime() + HORIZON_DAYS*24*60*60*1000);
 
     function disableFn(date) {
-      if (date.getDay() === 0 || date.getDay() === 6) return true; // fim de semana
+      if (date.getDay() === 0 || date.getDay() === 6) return true; // fds
       if (date < today) return true;                                // passado
       if (date > maxDate) return true;                              // >60 dias
-      if (!tipoSel.value) return true;                              // sem tipo → bloqueia
-      const d = flatpickr.formatDate(date, "Y-m-d");                // lotados (backend)
+      if (!tipoSel.value) return true;                              // sem tipo
+      const d = flatpickr.formatDate(date, "Y-m-d");
       return diasLotados.includes(d);
     }
 
-    // Datepicker colado ao campo (apenas DATA)
     let fpDate = flatpickr("#dataInput", {
       dateFormat: "Y-m-d",
       disable: [ disableFn ],
@@ -203,16 +237,14 @@
       maxDate: maxDate
     });
 
-    /******** CHAMADAS AO BACKEND (Apps Script) — SEM PREFLIGHT ********/
-    // GET simples (action em querystring) — CORS simples
+    // Backend (sem preflight)
     async function fetchDiasLotados(tipo) {
       const url = `${WEB_APP_URL}?action=diasLotados&tipo=${encodeURIComponent(tipo)}&t=${Date.now()}`;
       const r = await fetch(url, { method: "GET" });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return await r.json(); // array de strings 'yyyy-MM-dd'
+      return await r.json();
     }
 
-    // POST como text/plain (request simples, sem preflight)
     async function enviarReserva(payload) {
       const r = await fetch(WEB_APP_URL, {
         method: "POST",
@@ -220,10 +252,9 @@
         body: JSON.stringify({ action: "reservar", ...payload })
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return await r.json(); // { status:"ok" } ou { status:"erro", mensagem:"..." }
+      return await r.json();
     }
 
-    /************************* LÓGICA DE UI *************************/
     async function atualizarDiasLotados() {
       const tipo = tipoSel.value;
       if (!tipo) {
@@ -233,7 +264,6 @@
         fpDate.redraw();
         return;
       }
-
       dataInput.disabled = false;
       setLoading(true);
       try {
@@ -241,7 +271,6 @@
         diasLotados = Array.isArray(datas) ? datas : [];
         fpDate.set("disable", [ disableFn ]);
         fpDate.redraw();
-        // Se a data atual ficou bloqueada, limpa
         if (dataInput.value && diasLotados.includes(dataInput.value)) {
           fpDate.clear();
         }
@@ -258,15 +287,11 @@
       e.preventDefault();
       erroDiv.style.color = "red";
       erroDiv.textContent = "";
-
-      // Validação simples dos selects
       if (!inicioSel.value || !fimSel.value) {
         erroDiv.textContent = "Selecione as horas de início e término.";
         return;
       }
-
       const dados = Object.fromEntries(new FormData(form));
-
       setLoading(true);
       try {
         const resp = await enviarReserva(dados);
@@ -276,7 +301,7 @@
           erroDiv.style.color = "green";
           erroDiv.textContent = "Reserva registrada com sucesso.";
           form.reset();
-          dataInput.disabled = true;  // obriga escolher tipo de novo
+          dataInput.disabled = true;
           await atualizarDiasLotados();
         }
       } catch (err) {
@@ -286,45 +311,53 @@
       }
     });
 
-    /************** AGENDA (JSON -> HTML) **************/
-    let _agendaLoaded = false;
+    /************** AGENDA (JSON -> MODAL) **************/
+    const agendaModal = document.getElementById('agendaModal');
+    const agendaBody  = document.getElementById('agendaBody');
+    const btnRefresh  = document.getElementById('btnRefreshAgenda');
+
+    function openAgenda() {
+      agendaModal.classList.add('active');
+      agendaBody.innerHTML = '<div class="modal-loading"><div class="spinner"></div>Carregando…</div>';
+      document.addEventListener('keydown', escClose);
+    }
+    function closeAgenda() {
+      agendaModal.classList.remove('active');
+      document.removeEventListener('keydown', escClose);
+    }
+    function escClose(e){ if (e.key === 'Escape') closeAgenda(); }
 
     async function carregarAgenda() {
-      const cont = document.getElementById('agendaContainer');
-      cont.textContent = 'Carregando…';
+      agendaBody.innerHTML = '<div class="modal-loading"><div class="spinner"></div>Carregando…</div>';
       try {
         const url = `${AGENDA_API_URL}?action=agendaJson&t=${Date.now()}`;
         const resp = await fetch(url, { method: 'GET' });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const data = await resp.json(); // { days: [...] }
+        const data = await resp.json();
 
         if (!data.days || data.days.length === 0) {
-          cont.textContent = "Sem eventos nos próximos 60 dias.";
+          agendaBody.textContent = "Sem eventos nos próximos 60 dias.";
           return;
         }
 
         const frag = document.createDocumentFragment();
         data.days.forEach(d => {
           const dia = document.createElement('div');
-          dia.style.marginTop = '16px';
+          dia.className = 'dia';
 
           const titulo = document.createElement('div');
-          titulo.style.fontWeight = '700';
+          titulo.className = 'dia-titulo';
           const [Y,M,D] = d.date.split('-');
           titulo.textContent = `${D}/${M}/${Y}`;
           dia.appendChild(titulo);
 
           d.events.forEach(ev => {
             const box = document.createElement('div');
-            box.style.border = '1px solid #ddd';
-            box.style.borderLeft = `6px solid ${ev.color}`;
-            box.style.borderRadius = '6px';
-            box.style.padding = '6px 8px';
-            box.style.margin = '6px 0';
-            box.style.background = '#fafafa';
+            box.className = 'ev';
+            box.style.borderLeftColor = ev.color;
 
             const hora = document.createElement('span');
-            hora.style.fontWeight = '600';
+            hora.className = 'hora';
             hora.textContent = `${ev.start}–${ev.end} `;
             box.appendChild(hora);
 
@@ -338,25 +371,23 @@
           frag.appendChild(dia);
         });
 
-        cont.innerHTML = '';
-        cont.appendChild(frag);
+        agendaBody.innerHTML = '';
+        agendaBody.appendChild(frag);
 
       } catch (err) {
-        cont.textContent = "Erro ao carregar a agenda: " + err.message;
+        agendaBody.textContent = "Erro ao carregar a agenda: " + err.message;
       }
     }
 
-    // chamada ao clicar no link
     function initAgenda(e) {
       if (e) e.preventDefault();
-      if (!_agendaLoaded) {
-        _agendaLoaded = true;
-        carregarAgenda();
-      }
-      document.getElementById('agenda').scrollIntoView({ behavior: 'smooth' });
+      openAgenda();
+      carregarAgenda(); // carrega ao abrir
     }
-    // deixa acessível no escopo global para o onclick do link
+    btnRefresh.addEventListener('click', carregarAgenda);
+
     window.initAgenda = initAgenda;
+    window.closeAgenda = closeAgenda;
   </script>
 </body>
 </html>
