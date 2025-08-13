@@ -275,6 +275,81 @@
 
     // dica: deixe o usuário escolher o tipo; só então carregue disponibilidade
   </script>
+
+<section id="agenda">
+  <h3>Agenda pública – próximos 60 dias</h3>
+  <div id="agendaContainer">Carregando…</div>
+</section>
+
+<script>
+  // troque pela sua URL /exec real:
+  const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyx4AvyTzL4zPZ02WKXyX-AFFjDq76yCVb-96v83Du2LnW0X-TaoR-eN1C_3jCDKco/exec";
+
+  async function carregarAgenda() {
+    const cont = document.getElementById('agendaContainer');
+    try {
+      const url = `${WEB_APP_URL}?action=agendaJson&t=${Date.now()}`;
+      const resp = await fetch(url, { method: 'GET' }); // GET simples costuma passar pela rede do BC
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json(); // { days: [...] }
+
+      if (!data.days || data.days.length === 0) {
+        cont.textContent = "Sem eventos nos próximos 60 dias.";
+        return;
+      }
+
+      // monta HTML leve
+      const frag = document.createDocumentFragment();
+      data.days.forEach(d => {
+        const dia = document.createElement('div');
+        dia.style.marginTop = '16px';
+
+        const titulo = document.createElement('div');
+        titulo.style.fontWeight = '700';
+        // formata yyyy-MM-dd -> dd/MM/yyyy (sem libs)
+        const [Y,M,D] = d.date.split('-');
+        const br = `${D}/${M}/${Y}`;
+        titulo.textContent = br;
+        dia.appendChild(titulo);
+
+        d.events.forEach(ev => {
+          const box = document.createElement('div');
+          box.style.border = '1px solid #ddd';
+          box.style.borderLeft = `6px solid ${ev.color}`;
+          box.style.borderRadius = '6px';
+          box.style.padding = '6px 8px';
+          box.style.margin = '6px 0';
+          box.style.background = '#fafafa';
+
+          const hora = document.createElement('span');
+          hora.style.fontWeight = '600';
+          hora.textContent = `${ev.start}–${ev.end} `;
+          box.appendChild(hora);
+
+          const sum = document.createElement('span');
+          sum.textContent = ev.summary;
+          box.appendChild(sum);
+
+          dia.appendChild(box);
+        });
+
+        frag.appendChild(dia);
+      });
+
+      cont.innerHTML = '';
+      cont.appendChild(frag);
+
+    } catch (err) {
+      document.getElementById('agendaContainer').textContent =
+        "Erro ao carregar a agenda: " + err.message;
+    }
+  }
+
+  carregarAgenda();
+</script>
+
+
+  
 </body>
 </html>
 
