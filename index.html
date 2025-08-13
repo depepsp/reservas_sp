@@ -51,7 +51,7 @@
       width: 100%;
     }
     button { width: auto; padding: 10px 20px; cursor: pointer; }
-    .error { color: red; margin-top: 6px; }
+    .error { color: red; margin-top: 6px; min-height: 1.2em; }
 
     /* Calendário sobrepõe inputs e fica junto ao campo */
     .flatpickr-calendar { z-index: 9999 !important; }
@@ -74,7 +74,11 @@
     #loading .wrap-loading { display: flex; align-items: center; font-size: 16px; color: #333; }
 
     .calendar-link { margin-top: 12px; font-size: 14px; }
-    .calendar-link a { text-decoration: underline; }
+    .calendar-link a { text-decoration: underline; cursor: pointer; }
+
+    /* Seção da agenda (lista) */
+    #agenda { margin-top: 24px; text-align: left; }
+    #agenda h3 { text-align: center; margin: 16px 0 8px; }
   </style>
 </head>
 <body>
@@ -115,15 +119,24 @@
       <button type="submit" id="btnEnviar">Reservar</button>
 
       <div class="calendar-link">
-        Para consultar o calendário da Sala de Pesquisadores, <a target="_blank" rel="noopener"
-        href="https://script.google.com/macros/s/AKfycbyx4AvyTzL4zPZ02WKXyX-AFFjDq76yCVb-96v83Du2LnW0X-TaoR-eN1C_3jCDKco/exec?action=agenda">clique aqui</a>.
+        Para consultar o calendário da Sala de Pesquisadores,
+        <a href="#agenda" onclick="initAgenda(event)">clique aqui</a>.
+        <!-- Se quiser também abrir a versão SSR em nova aba, descomente: -->
+        <!-- <span> | </span><a target="_blank" rel="noopener" href="https://script.google.com/macros/s/AKfycbyx4AvyTzL4zPZ02WKXyX-AFFjDq76yCVb-96v83Du2LnW0X-TaoR-eN1C_3jCDKco/exec?action=agenda">abrir em nova aba</a> -->
       </div>
     </form>
+
+    <!-- Agenda (carrega sob demanda via JSON) -->
+    <section id="agenda">
+      <h3>Agenda pública – próximos 60 dias</h3>
+      <div id="agendaContainer">Clique no link acima para carregar a agenda…</div>
+    </section>
   </div>
 
   <script>
     /***** CONFIG: COLE AQUI O URL DO SEU WEB APP (termina com /exec) *****/
     const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyx4AvyTzL4zPZ02WKXyX-AFFjDq76yCVb-96v83Du2LnW0X-TaoR-eN1C_3jCDKco/exec"; // <-- SUBSTITUA
+    const AGENDA_API_URL = "https://script.google.com/macros/s/AKfycbyx4AvyTzL4zPZ02WKXyX-AFFjDq76yCVb-96v83Du2LnW0X-TaoR-eN1C_3jCDKco/exec"; // <-- SUBSTITUA (pode ser o mesmo)
 
     const form        = document.getElementById("reservaForm");
     const erroDiv     = document.getElementById("erroMsg");
@@ -273,84 +286,77 @@
       }
     });
 
-    // dica: deixe o usuário escolher o tipo; só então carregue disponibilidade
-  </script>
+    /************** AGENDA (JSON -> HTML) **************/
+    let _agendaLoaded = false;
 
-<section id="agenda">
-  <h3>Agenda pública – próximos 60 dias</h3>
-  <div id="agendaContainer">Carregando…</div>
-</section>
+    async function carregarAgenda() {
+      const cont = document.getElementById('agendaContainer');
+      cont.textContent = 'Carregando…';
+      try {
+        const url = `${AGENDA_API_URL}?action=agendaJson&t=${Date.now()}`;
+        const resp = await fetch(url, { method: 'GET' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json(); // { days: [...] }
 
-<script>
-  // troque pela sua URL /exec real:
-  const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyx4AvyTzL4zPZ02WKXyX-AFFjDq76yCVb-96v83Du2LnW0X-TaoR-eN1C_3jCDKco/exec";
+        if (!data.days || data.days.length === 0) {
+          cont.textContent = "Sem eventos nos próximos 60 dias.";
+          return;
+        }
 
-  async function carregarAgenda() {
-    const cont = document.getElementById('agendaContainer');
-    try {
-      const url = `${WEB_APP_URL}?action=agendaJson&t=${Date.now()}`;
-      const resp = await fetch(url, { method: 'GET' }); // GET simples costuma passar pela rede do BC
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json(); // { days: [...] }
+        const frag = document.createDocumentFragment();
+        data.days.forEach(d => {
+          const dia = document.createElement('div');
+          dia.style.marginTop = '16px';
 
-      if (!data.days || data.days.length === 0) {
-        cont.textContent = "Sem eventos nos próximos 60 dias.";
-        return;
-      }
+          const titulo = document.createElement('div');
+          titulo.style.fontWeight = '700';
+          const [Y,M,D] = d.date.split('-');
+          titulo.textContent = `${D}/${M}/${Y}`;
+          dia.appendChild(titulo);
 
-      // monta HTML leve
-      const frag = document.createDocumentFragment();
-      data.days.forEach(d => {
-        const dia = document.createElement('div');
-        dia.style.marginTop = '16px';
+          d.events.forEach(ev => {
+            const box = document.createElement('div');
+            box.style.border = '1px solid #ddd';
+            box.style.borderLeft = `6px solid ${ev.color}`;
+            box.style.borderRadius = '6px';
+            box.style.padding = '6px 8px';
+            box.style.margin = '6px 0';
+            box.style.background = '#fafafa';
 
-        const titulo = document.createElement('div');
-        titulo.style.fontWeight = '700';
-        // formata yyyy-MM-dd -> dd/MM/yyyy (sem libs)
-        const [Y,M,D] = d.date.split('-');
-        const br = `${D}/${M}/${Y}`;
-        titulo.textContent = br;
-        dia.appendChild(titulo);
+            const hora = document.createElement('span');
+            hora.style.fontWeight = '600';
+            hora.textContent = `${ev.start}–${ev.end} `;
+            box.appendChild(hora);
 
-        d.events.forEach(ev => {
-          const box = document.createElement('div');
-          box.style.border = '1px solid #ddd';
-          box.style.borderLeft = `6px solid ${ev.color}`;
-          box.style.borderRadius = '6px';
-          box.style.padding = '6px 8px';
-          box.style.margin = '6px 0';
-          box.style.background = '#fafafa';
+            const sum = document.createElement('span');
+            sum.textContent = ev.summary;
+            box.appendChild(sum);
 
-          const hora = document.createElement('span');
-          hora.style.fontWeight = '600';
-          hora.textContent = `${ev.start}–${ev.end} `;
-          box.appendChild(hora);
+            dia.appendChild(box);
+          });
 
-          const sum = document.createElement('span');
-          sum.textContent = ev.summary;
-          box.appendChild(sum);
-
-          dia.appendChild(box);
+          frag.appendChild(dia);
         });
 
-        frag.appendChild(dia);
-      });
+        cont.innerHTML = '';
+        cont.appendChild(frag);
 
-      cont.innerHTML = '';
-      cont.appendChild(frag);
-
-    } catch (err) {
-      document.getElementById('agendaContainer').textContent =
-        "Erro ao carregar a agenda: " + err.message;
+      } catch (err) {
+        cont.textContent = "Erro ao carregar a agenda: " + err.message;
+      }
     }
-  }
 
-  carregarAgenda();
-</script>
-
-
-  
+    // chamada ao clicar no link
+    function initAgenda(e) {
+      if (e) e.preventDefault();
+      if (!_agendaLoaded) {
+        _agendaLoaded = true;
+        carregarAgenda();
+      }
+      document.getElementById('agenda').scrollIntoView({ behavior: 'smooth' });
+    }
+    // deixa acessível no escopo global para o onclick do link
+    window.initAgenda = initAgenda;
+  </script>
 </body>
 </html>
-
-
