@@ -97,12 +97,24 @@
       border: none; background: transparent; font-size: 22px; line-height: 1; cursor: pointer; margin-left: 4px;
     }
     .panel-body { padding: 12px 16px; overflow: auto; }
+
     .modal-loading { display: flex; align-items: center; justify-content: center; color: #333; font-weight: 600; height: 240px; }
     .modal-loading .spinner { margin-right: 10px; }
 
+    .sec-title {
+      margin-top: 14px;
+      font-weight: 700;
+      font-size: 14px;
+      color: #444;
+    }
+
     .dia { margin-top: 16px; }
     .dia-titulo { font-weight: 700; margin-bottom: 6px; }
-    .ev { border: 1px solid #ddd; border-left: 6px solid; padding: 6px 8px; margin: 6px 0; border-radius: 6px; background: #fafafa; }
+
+    .ev {
+      border: 1px solid #ddd; border-left: 6px solid; padding: 6px 8px;
+      margin: 6px 0; border-radius: 6px; background: #fafafa;
+    }
     .ev .hora { font-weight: 600; margin-right: 6px; }
   </style>
 </head>
@@ -132,7 +144,7 @@
         <select name="inicio" required id="inicioSelect"></select>
       </label>
 
-      <label>Hora de término (até as 18:00):
+      <label>Hora de término (até as 19:00):
         <select name="fim" required id="fimSelect"></select>
       </label>
 
@@ -185,7 +197,7 @@
     // Parâmetros alinhados com o backend
     const HORIZON_DAYS = 60;
     const OPEN_TIME = "09:00";
-    const CLOSE_TIME = "18:00";
+    const CLOSE_TIME = "19:00"; // <-- alterado para 19:00
 
     let diasLotados = [];
 
@@ -196,22 +208,33 @@
       btnEnviar.disabled = !!on;
     }
 
-    // Horários (09:00..18:00)
-    function populateTimeSelect(selectEl, startHour = 9, endHour = 18) {
+    // Constrói opções de tempo com step em minutos (default 30)
+    function populateTimeSelectFromRange(selectEl, startStr, endStr, stepMin = 30) {
       selectEl.innerHTML = "";
       const first = document.createElement("option");
       first.value = ""; first.textContent = "Selecione...";
       selectEl.appendChild(first);
-      for (let h = startHour; h <= endHour; h++) {
-        const hh = String(h).padStart(2, "0");
+
+      // base em UTC pra não sofrer com timezone ao formatar HH:mm
+      const [sh, sm] = startStr.split(":").map(Number);
+      const [eh, em] = endStr.split(":").map(Number);
+
+      const base = new Date(Date.UTC(2000,0,1, sh, sm, 0, 0));
+      const end  = new Date(Date.UTC(2000,0,1, eh, em, 0, 0));
+
+      for (let t = new Date(base); t <= end; t = new Date(t.getTime() + stepMin*60000)) {
+        const hh = String(t.getUTCHours()).padStart(2,"0");
+        const mm = String(t.getUTCMinutes()).padStart(2,"0");
         const opt = document.createElement("option");
-        opt.value = `${hh}:00`;
-        opt.textContent = `${hh}:00`;
+        opt.value = `${hh}:${mm}`;
+        opt.textContent = `${hh}:${mm}`;
         selectEl.appendChild(opt);
       }
     }
-    populateTimeSelect(inicioSel);
-    populateTimeSelect(fimSel);
+
+    // Popular selects com 30 em 30 min de 09:00 até 19:00
+    populateTimeSelectFromRange(inicioSel, OPEN_TIME, CLOSE_TIME, 30);
+    populateTimeSelectFromRange(fimSel,    OPEN_TIME, CLOSE_TIME, 30);
 
     // Datas: hoje até +60 dias
     const today = new Date(); today.setHours(0,0,0,0);
@@ -326,6 +349,13 @@
     }
     function escClose(e){ if (e.key === 'Escape') closeAgenda(); }
 
+    // helper para decidir se é Servidor (padrão de títulos que usamos no backend)
+    function isServidor(evSummary = "") {
+      // títulos típicos: "Depep - Nome"  (servidor)  |  "Pesquisador - Nome" (pesquisador)
+      const s = (evSummary || "").toLowerCase();
+      return s.startsWith("depep -") || s.startsWith("servidor");
+    }
+
     async function carregarAgenda() {
       agendaBody.innerHTML = '<div class="modal-loading"><div class="spinner"></div>Carregando…</div>';
       try {
@@ -340,32 +370,83 @@
         }
 
         const frag = document.createDocumentFragment();
+
         data.days.forEach(d => {
           const dia = document.createElement('div');
           dia.className = 'dia';
 
+          // Título do dia
           const titulo = document.createElement('div');
           titulo.className = 'dia-titulo';
           const [Y,M,D] = d.date.split('-');
           titulo.textContent = `${D}/${M}/${Y}`;
           dia.appendChild(titulo);
 
-          d.events.forEach(ev => {
-            const box = document.createElement('div');
-            box.className = 'ev';
-            box.style.borderLeftColor = ev.color;
+          // Separa eventos em "servidor" e "pesquisador"
+          const servidores   = [];
+          const pesquisadores = [];
 
-            const hora = document.createElement('span');
-            hora.className = 'hora';
-            hora.textContent = `${ev.start}–${ev.end} `;
-            box.appendChild(hora);
-
-            const sum = document.createElement('span');
-            sum.textContent = ev.summary;
-            box.appendChild(sum);
-
-            dia.appendChild(box);
+          (d.events || []).forEach(ev => {
+            (isServidor(ev.summary) ? servidores : pesquisadores).push(ev);
           });
+
+          // Ordena cada grupo por horário (opcional, caso já venha ordenado)
+          const toMinutes = (hhmm) => {
+            const [h,m] = (hhmm||"0:0").split(':').map(Number);
+            return h*60 + (m||0);
+          };
+          servidores.sort((a,b)=>toMinutes(a.start)-toMinutes(b.start));
+          pesquisadores.sort((a,b)=>toMinutes(a.start)-toMinutes(b.start));
+
+          // Bloco "Sala disponível" (servidores) — primeiro
+          if (servidores.length) {
+            const st = document.createElement('div');
+            st.className = 'sec-title';
+            st.textContent = "Sala disponível (Servidor do Depep presente)";
+            dia.appendChild(st);
+
+            servidores.forEach(ev => {
+              const box = document.createElement('div');
+              box.className = 'ev';
+              box.style.borderLeftColor = ev.color;
+
+              const hora = document.createElement('span');
+              hora.className = 'hora';
+              hora.textContent = `${ev.start}–${ev.end} `;
+              box.appendChild(hora);
+
+              const sum = document.createElement('span');
+              sum.textContent = ev.summary;
+              box.appendChild(sum);
+
+              dia.appendChild(box);
+            });
+          }
+
+          // Depois, “Reservas de pesquisadores”
+          if (pesquisadores.length) {
+            const st2 = document.createElement('div');
+            st2.className = 'sec-title';
+            st2.textContent = "Reservas de pesquisadores";
+            dia.appendChild(st2);
+
+            pesquisadores.forEach(ev => {
+              const box = document.createElement('div');
+              box.className = 'ev';
+              box.style.borderLeftColor = ev.color;
+
+              const hora = document.createElement('span');
+              hora.className = 'hora';
+              hora.textContent = `${ev.start}–${ev.end} `;
+              box.appendChild(hora);
+
+              const sum = document.createElement('span');
+              sum.textContent = ev.summary;
+              box.appendChild(sum);
+
+              dia.appendChild(box);
+            });
+          }
 
           frag.appendChild(dia);
         });
@@ -390,6 +471,3 @@
   </script>
 </body>
 </html>
-
-
-
