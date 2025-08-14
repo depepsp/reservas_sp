@@ -116,6 +116,55 @@
       margin: 6px 0; border-radius: 6px; background: #fafafa;
     }
     .ev .hora { font-weight: 600; margin-right: 6px; }
+  
+  /* ===== Agenda em duas colunas ===== */
+.cols {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+@media (min-width: 800px) {
+  .cols { grid-template-columns: 1fr 1fr; }
+}
+.col {
+  border: 1px solid #eee;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+.col-header {
+  padding: 10px 12px;
+  font-weight: 700;
+  background: #f7f7f7;
+  border-bottom: 1px solid #eee;
+}
+.col-body {
+  padding: 10px 12px;
+}
+.dia {
+  margin-top: 14px;
+}
+.dia-titulo {
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.ev {
+  border: 1px solid #ddd;
+  border-left: 6px solid;
+  padding: 6px 8px;
+  margin: 6px 0;
+  border-radius: 6px;
+  background: #fafafa;
+}
+.ev .hora {
+  font-weight: 600;
+  margin-right: 6px;
+}
+.col-empty {
+  color: #666;
+  font-style: italic;
+  margin-top: 8px;
+}
   </style>
 </head>
 <body>
@@ -357,71 +406,124 @@
     }
 
     async function carregarAgenda() {
-      agendaBody.innerHTML = '<div class="modal-loading"><div class="spinner"></div>Carregando…</div>';
-      try {
-        const url = `${AGENDA_API_URL}?action=agendaJson&t=${Date.now()}`;
-        const resp = await fetch(url, { method: 'GET' });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const data = await resp.json();
+  agendaBody.innerHTML = '<div class="modal-loading"><div class="spinner"></div>Carregando…</div>';
 
-        if (!data.days || data.days.length === 0) {
-          agendaBody.textContent = "Sem eventos nos próximos 60 dias.";
-          return;
-        }
+  try {
+    const url  = `${AGENDA_API_URL}?action=agendaJson&t=${Date.now()}`;
+    const resp = await fetch(url, { method: 'GET' });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json(); // { days: [{date, events:[{start,end,summary,color,type}]}] }
 
-        const frag = document.createDocumentFragment();
+    const days = (data && data.days) ? data.days : [];
+    if (!days.length) {
+      agendaBody.textContent = "Sem eventos nos próximos 60 dias.";
+      return;
+    }
 
-        data.days.forEach(d => {
-          const dia = document.createElement('div');
-          dia.className = 'dia';
+    // Cria as duas colunas
+    const cols = document.createElement('div');
+    cols.className = 'cols';
 
-          // Título do dia
-          const titulo = document.createElement('div');
-          titulo.className = 'dia-titulo';
-          const [Y,M,D] = d.date.split('-');
-          titulo.textContent = `${D}/${M}/${Y}`;
-          dia.appendChild(titulo);
+    const colServ = document.createElement('div');
+    colServ.className = 'col';
+    colServ.innerHTML = '<div class="col-header">Servidores (cobertura da sala)</div><div class="col-body" id="colServBody"></div>';
 
-          // Separa eventos em "servidor" e "pesquisador"
-          const servidores   = [];
-          const pesquisadores = [];
+    const colPesq = document.createElement('div');
+    colPesq.className = 'col';
+    colPesq.innerHTML = '<div class="col-header">Pesquisadores</div><div class="col-body" id="colPesqBody"></div>';
 
-          (d.events || []).forEach(ev => {
-            (isServidor(ev.summary) ? servidores : pesquisadores).push(ev);
-          });
+    cols.appendChild(colServ);
+    cols.appendChild(colPesq);
 
-          // Ordena cada grupo por horário (opcional, caso já venha ordenado)
-          const toMinutes = (hhmm) => {
-            const [h,m] = (hhmm||"0:0").split(':').map(Number);
-            return h*60 + (m||0);
-          };
-          servidores.sort((a,b)=>toMinutes(a.start)-toMinutes(b.start));
-          pesquisadores.sort((a,b)=>toMinutes(a.start)-toMinutes(b.start));
+    const servBody = colServ.querySelector('#colServBody');
+    const pesqBody = colPesq.querySelector('#colPesqBody');
 
-          // Bloco "Sala disponível" (servidores) — primeiro
-          if (servidores.length) {
-            const st = document.createElement('div');
-            st.className = 'sec-title';
-            st.textContent = "Sala disponível (Servidor do Depep presente)";
-            dia.appendChild(st);
+    // Renderiza por dia, separando por tipo
+    let servTemAlgo = false;
+    let pesqTemAlgo = false;
 
-            servidores.forEach(ev => {
-              const box = document.createElement('div');
-              box.className = 'ev';
-              box.style.borderLeftColor = ev.color;
+    days.forEach(d => {
+      const [Y,M,D] = d.date.split('-');
+      const brDate = `${D}/${M}/${Y}`;
 
-              const hora = document.createElement('span');
-              hora.className = 'hora';
-              hora.textContent = `${ev.start}–${ev.end} `;
-              box.appendChild(hora);
+      const evServ = d.events.filter(ev => ev.type === 'servidor');
+      const evPesq = d.events.filter(ev => ev.type === 'pesquisador');
 
-              const sum = document.createElement('span');
-              sum.textContent = ev.summary;
-              box.appendChild(sum);
+      if (evServ.length) {
+        servTemAlgo = true;
+        const diaBox = document.createElement('div');
+        diaBox.className = 'dia';
 
-              dia.appendChild(box);
-            });
-          }
+        const titulo = document.createElement('div');
+        titulo.className = 'dia-titulo';
+        titulo.textContent = brDate;
+        diaBox.appendChild(titulo);
+
+        evServ.forEach(ev => {
+          const box = document.createElement('div');
+          box.className = 'ev';
+          box.style.borderLeftColor = ev.color || '#9e9e9e';
+
+          const hora = document.createElement('span');
+          hora.className = 'hora';
+          hora.textContent = `${ev.start}–${ev.end} `;
+          box.appendChild(hora);
+
+          const sum = document.createElement('span');
+          sum.textContent = ev.summary;
+          box.appendChild(sum);
+
+          diaBox.appendChild(box);
+        });
+
+        servBody.appendChild(diaBox);
+      }
+
+      if (evPesq.length) {
+        pesqTemAlgo = true;
+        const diaBox = document.createElement('div');
+        diaBox.className = 'dia';
+
+        const titulo = document.createElement('div');
+        titulo.className = 'dia-titulo';
+        titulo.textContent = brDate;
+        diaBox.appendChild(titulo);
+
+        evPesq.forEach(ev => {
+          const box = document.createElement('div');
+          box.className = 'ev';
+          box.style.borderLeftColor = ev.color || '#1a73e8';
+
+          const hora = document.createElement('span');
+          hora.className = 'hora';
+          hora.textContent = `${ev.start}–${ev.end} `;
+          box.appendChild(hora);
+
+          const sum = document.createElement('span');
+          sum.textContent = ev.summary;
+          box.appendChild(sum);
+
+          diaBox.appendChild(box);
+        });
+
+        pesqBody.appendChild(diaBox);
+      }
+    });
+
+    if (!servTemAlgo) {
+      servBody.innerHTML = '<div class="col-empty">Sem eventos de Servidores.</div>';
+    }
+    if (!pesqTemAlgo) {
+      pesqBody.innerHTML = '<div class="col-empty">Sem eventos de Pesquisadores.</div>';
+    }
+
+    agendaBody.innerHTML = '';
+    agendaBody.appendChild(cols);
+
+  } catch (err) {
+    agendaBody.textContent = "Erro ao carregar a agenda: " + err.message;
+  }
+}
 
           // Depois, “Reservas de pesquisadores”
           if (pesquisadores.length) {
@@ -471,6 +573,7 @@
   </script>
 </body>
 </html>
+
 
 
 
