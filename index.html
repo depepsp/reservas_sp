@@ -53,6 +53,7 @@
     button { width: auto; padding: 10px 20px; cursor: pointer; }
     .error { color: red; margin-top: 6px; min-height: 1.2em; }
 
+    /* flatpickr acima de tudo */
     .flatpickr-calendar { z-index: 9999 !important; }
 
     /* Loader do FORM */
@@ -97,74 +98,43 @@
       border: none; background: transparent; font-size: 22px; line-height: 1; cursor: pointer; margin-left: 4px;
     }
     .panel-body { padding: 12px 16px; overflow: auto; }
-
     .modal-loading { display: flex; align-items: center; justify-content: center; color: #333; font-weight: 600; height: 240px; }
     .modal-loading .spinner { margin-right: 10px; }
 
-    .sec-title {
-      margin-top: 14px;
-      font-weight: 700;
-      font-size: 14px;
-      color: #444;
+    /* ===== Agenda em duas colunas ===== */
+    .cols {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
     }
-
-    .dia { margin-top: 16px; }
+    @media (min-width: 800px) {
+      .cols { grid-template-columns: 1fr 1fr; }
+    }
+    .col {
+      border: 1px solid #eee;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+    }
+    .col-header {
+      padding: 10px 12px;
+      font-weight: 700;
+      background: #f7f7f7;
+      border-bottom: 1px solid #eee;
+    }
+    .col-body { padding: 10px 12px; }
+    .dia { margin-top: 14px; }
     .dia-titulo { font-weight: 700; margin-bottom: 6px; }
-
     .ev {
-      border: 1px solid #ddd; border-left: 6px solid; padding: 6px 8px;
-      margin: 6px 0; border-radius: 6px; background: #fafafa;
+      border: 1px solid #ddd;
+      border-left: 6px solid;
+      padding: 6px 8px;
+      margin: 6px 0;
+      border-radius: 6px;
+      background: #fafafa;
     }
     .ev .hora { font-weight: 600; margin-right: 6px; }
-  
-  /* ===== Agenda em duas colunas ===== */
-.cols {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 16px;
-}
-@media (min-width: 800px) {
-  .cols { grid-template-columns: 1fr 1fr; }
-}
-.col {
-  border: 1px solid #eee;
-  border-radius: 8px;
-  overflow: hidden;
-  background: #fff;
-}
-.col-header {
-  padding: 10px 12px;
-  font-weight: 700;
-  background: #f7f7f7;
-  border-bottom: 1px solid #eee;
-}
-.col-body {
-  padding: 10px 12px;
-}
-.dia {
-  margin-top: 14px;
-}
-.dia-titulo {
-  font-weight: 700;
-  margin-bottom: 6px;
-}
-.ev {
-  border: 1px solid #ddd;
-  border-left: 6px solid;
-  padding: 6px 8px;
-  margin: 6px 0;
-  border-radius: 6px;
-  background: #fafafa;
-}
-.ev .hora {
-  font-weight: 600;
-  margin-right: 6px;
-}
-.col-empty {
-  color: #666;
-  font-style: italic;
-  margin-top: 8px;
-}
+    .col-empty { color: #666; font-style: italic; margin-top: 8px; }
   </style>
 </head>
 <body>
@@ -229,9 +199,11 @@
   </div>
 
   <script>
-    /* CONFIG: URLs do seu Web App (terminam com /exec) */
-    const WEB_APP_URL    = "https://script.google.com/macros/s/AKfycbzwnEmk_SmDeblGVneOjzd-J5Fd08DD2Z6gsW5KrHMpTb8sb_OtHVA91jN5v2OctOYj/exec"; // formulário
-    const AGENDA_API_URL = "https://script.google.com/macros/s/AKfycbzwnEmk_SmDeblGVneOjzd-J5Fd08DD2Z6gsW5KrHMpTb8sb_OtHVA91jN5v2OctOYj/exec"; // agenda JSON (pode ser o mesmo)
+    "use strict";
+
+    /***** CONFIG: COLE AQUI O URL DO SEU WEB APP (termina com /exec) *****/
+    const WEB_APP_URL    = "https://script.google.com/macros/s/AKfycbyx4AvyTzL4zPZ02WKXyX-AFFjDq76yCVb-96v83Du2LnW0X-TaoR-eN1C_3jCDKco/exec";
+    const AGENDA_API_URL = WEB_APP_URL; // pode ser o mesmo
 
     const form      = document.getElementById("reservaForm");
     const erroDiv   = document.getElementById("erroMsg");
@@ -243,10 +215,10 @@
     const btnEnviar = document.getElementById("btnEnviar");
     const loading   = document.getElementById("loading");
 
-    // Parâmetros alinhados com o backend
+    // Janela de funcionamento e horizonte
     const HORIZON_DAYS = 60;
-    const OPEN_TIME = "09:00";
-    const CLOSE_TIME = "19:00"; // <-- alterado para 19:00
+    const OPEN_TIME  = "09:00";
+    const CLOSE_TIME = "19:00";
 
     let diasLotados = [];
 
@@ -257,36 +229,31 @@
       btnEnviar.disabled = !!on;
     }
 
-    // Constrói opções de tempo com step em minutos (default 30)
-    function populateTimeSelectFromRange(selectEl, startStr, endStr, stepMin = 30) {
+    // Gera opções de 30 em 30 min entre 09:00 e 19:00
+    function populateTimeSelect30(selectEl, startHour = 9, endHour = 19) {
       selectEl.innerHTML = "";
       const first = document.createElement("option");
       first.value = ""; first.textContent = "Selecione...";
       selectEl.appendChild(first);
 
-      // base em UTC pra não sofrer com timezone ao formatar HH:mm
-      const [sh, sm] = startStr.split(":").map(Number);
-      const [eh, em] = endStr.split(":").map(Number);
-
-      const base = new Date(Date.UTC(2000,0,1, sh, sm, 0, 0));
-      const end  = new Date(Date.UTC(2000,0,1, eh, em, 0, 0));
-
-      for (let t = new Date(base); t <= end; t = new Date(t.getTime() + stepMin*60000)) {
-        const hh = String(t.getUTCHours()).padStart(2,"0");
-        const mm = String(t.getUTCMinutes()).padStart(2,"0");
-        const opt = document.createElement("option");
-        opt.value = `${hh}:${mm}`;
-        opt.textContent = `${hh}:${mm}`;
-        selectEl.appendChild(opt);
+      for (let h = startHour; h <= endHour; h++) {
+        for (let m of [0, 30]) {
+          const hh = String(h).padStart(2, "0");
+          const mm = String(m).padStart(2, "0");
+          const val = `${hh}:${mm}`;
+          // não permitir 19:30 etc.
+          if (h === endHour && m > 0) continue;
+          const opt = document.createElement("option");
+          opt.value = val; opt.textContent = val;
+          selectEl.appendChild(opt);
+        }
       }
     }
-
-    // Popular selects com 30 em 30 min de 09:00 até 19:00
-    populateTimeSelectFromRange(inicioSel, OPEN_TIME, CLOSE_TIME, 30);
-    populateTimeSelectFromRange(fimSel,    OPEN_TIME, CLOSE_TIME, 30);
+    populateTimeSelect30(inicioSel, 9, 19);
+    populateTimeSelect30(fimSel,    9, 19);
 
     // Datas: hoje até +60 dias
-    const today = new Date(); today.setHours(0,0,0,0);
+    const today   = new Date(); today.setHours(0,0,0,0);
     const maxDate = new Date(today.getTime() + HORIZON_DAYS*24*60*60*1000);
 
     function disableFn(date) {
@@ -398,144 +365,62 @@
     }
     function escClose(e){ if (e.key === 'Escape') closeAgenda(); }
 
-    // helper para decidir se é Servidor (padrão de títulos que usamos no backend)
-    function isServidor(evSummary = "") {
-      // títulos típicos: "Depep - Nome"  (servidor)  |  "Pesquisador - Nome" (pesquisador)
-      const s = (evSummary || "").toLowerCase();
-      return s.startsWith("depep -") || s.startsWith("servidor");
-    }
-
     async function carregarAgenda() {
-  agendaBody.innerHTML = '<div class="modal-loading"><div class="spinner"></div>Carregando…</div>';
+      agendaBody.innerHTML = '<div class="modal-loading"><div class="spinner"></div>Carregando…</div>';
+      try {
+        const url  = `${AGENDA_API_URL}?action=agendaJson&t=${Date.now()}`;
+        const resp = await fetch(url, { method: 'GET' });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json(); // { days: [{date, events:[{start,end,summary,color,type}]}] }
 
-  try {
-    const url  = `${AGENDA_API_URL}?action=agendaJson&t=${Date.now()}`;
-    const resp = await fetch(url, { method: 'GET' });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json(); // { days: [{date, events:[{start,end,summary,color,type}]}] }
+        const days = (data && data.days) ? data.days : [];
+        if (!days.length) {
+          agendaBody.textContent = "Sem eventos nos próximos 60 dias.";
+          return;
+        }
 
-    const days = (data && data.days) ? data.days : [];
-    if (!days.length) {
-      agendaBody.textContent = "Sem eventos nos próximos 60 dias.";
-      return;
-    }
+        // Colunas Servidores | Pesquisadores
+        const cols = document.createElement('div');
+        cols.className = 'cols';
 
-    // Cria as duas colunas
-    const cols = document.createElement('div');
-    cols.className = 'cols';
+        const colServ = document.createElement('div');
+        colServ.className = 'col';
+        colServ.innerHTML = '<div class="col-header">Servidores (cobertura da sala)</div><div class="col-body" id="colServBody"></div>';
 
-    const colServ = document.createElement('div');
-    colServ.className = 'col';
-    colServ.innerHTML = '<div class="col-header">Servidores (cobertura da sala)</div><div class="col-body" id="colServBody"></div>';
+        const colPesq = document.createElement('div');
+        colPesq.className = 'col';
+        colPesq.innerHTML = '<div class="col-header">Pesquisadores</div><div class="col-body" id="colPesqBody"></div>';
 
-    const colPesq = document.createElement('div');
-    colPesq.className = 'col';
-    colPesq.innerHTML = '<div class="col-header">Pesquisadores</div><div class="col-body" id="colPesqBody"></div>';
+        cols.appendChild(colServ);
+        cols.appendChild(colPesq);
 
-    cols.appendChild(colServ);
-    cols.appendChild(colPesq);
+        const servBody = colServ.querySelector('#colServBody');
+        const pesqBody = colPesq.querySelector('#colPesqBody');
 
-    const servBody = colServ.querySelector('#colServBody');
-    const pesqBody = colPesq.querySelector('#colPesqBody');
+        let servTemAlgo = false;
+        let pesqTemAlgo = false;
 
-    // Renderiza por dia, separando por tipo
-    let servTemAlgo = false;
-    let pesqTemAlgo = false;
+        days.forEach(d => {
+          const [Y,M,D] = d.date.split('-');
+          const brDate = `${D}/${M}/${Y}`;
 
-    days.forEach(d => {
-      const [Y,M,D] = d.date.split('-');
-      const brDate = `${D}/${M}/${Y}`;
+          const evServ = d.events.filter(ev => ev.type === 'servidor');
+          const evPesq = d.events.filter(ev => ev.type === 'pesquisador');
 
-      const evServ = d.events.filter(ev => ev.type === 'servidor');
-      const evPesq = d.events.filter(ev => ev.type === 'pesquisador');
+          if (evServ.length) {
+            servTemAlgo = true;
+            const diaBox = document.createElement('div');
+            diaBox.className = 'dia';
 
-      if (evServ.length) {
-        servTemAlgo = true;
-        const diaBox = document.createElement('div');
-        diaBox.className = 'dia';
+            const titulo = document.createElement('div');
+            titulo.className = 'dia-titulo';
+            titulo.textContent = brDate;
+            diaBox.appendChild(titulo);
 
-        const titulo = document.createElement('div');
-        titulo.className = 'dia-titulo';
-        titulo.textContent = brDate;
-        diaBox.appendChild(titulo);
-
-        evServ.forEach(ev => {
-          const box = document.createElement('div');
-          box.className = 'ev';
-          box.style.borderLeftColor = ev.color || '#9e9e9e';
-
-          const hora = document.createElement('span');
-          hora.className = 'hora';
-          hora.textContent = `${ev.start}–${ev.end} `;
-          box.appendChild(hora);
-
-          const sum = document.createElement('span');
-          sum.textContent = ev.summary;
-          box.appendChild(sum);
-
-          diaBox.appendChild(box);
-        });
-
-        servBody.appendChild(diaBox);
-      }
-
-      if (evPesq.length) {
-        pesqTemAlgo = true;
-        const diaBox = document.createElement('div');
-        diaBox.className = 'dia';
-
-        const titulo = document.createElement('div');
-        titulo.className = 'dia-titulo';
-        titulo.textContent = brDate;
-        diaBox.appendChild(titulo);
-
-        evPesq.forEach(ev => {
-          const box = document.createElement('div');
-          box.className = 'ev';
-          box.style.borderLeftColor = ev.color || '#1a73e8';
-
-          const hora = document.createElement('span');
-          hora.className = 'hora';
-          hora.textContent = `${ev.start}–${ev.end} `;
-          box.appendChild(hora);
-
-          const sum = document.createElement('span');
-          sum.textContent = ev.summary;
-          box.appendChild(sum);
-
-          diaBox.appendChild(box);
-        });
-
-        pesqBody.appendChild(diaBox);
-      }
-    });
-
-    if (!servTemAlgo) {
-      servBody.innerHTML = '<div class="col-empty">Sem eventos de Servidores.</div>';
-    }
-    if (!pesqTemAlgo) {
-      pesqBody.innerHTML = '<div class="col-empty">Sem eventos de Pesquisadores.</div>';
-    }
-
-    agendaBody.innerHTML = '';
-    agendaBody.appendChild(cols);
-
-  } catch (err) {
-    agendaBody.textContent = "Erro ao carregar a agenda: " + err.message;
-  }
-}
-
-          // Depois, “Reservas de pesquisadores”
-          if (pesquisadores.length) {
-            const st2 = document.createElement('div');
-            st2.className = 'sec-title';
-            st2.textContent = "Reservas de pesquisadores";
-            dia.appendChild(st2);
-
-            pesquisadores.forEach(ev => {
+            evServ.forEach(ev => {
               const box = document.createElement('div');
               box.className = 'ev';
-              box.style.borderLeftColor = ev.color;
+              box.style.borderLeftColor = ev.color || '#9e9e9e';
 
               const hora = document.createElement('span');
               hora.className = 'hora';
@@ -546,15 +431,52 @@
               sum.textContent = ev.summary;
               box.appendChild(sum);
 
-              dia.appendChild(box);
+              diaBox.appendChild(box);
             });
+
+            servBody.appendChild(diaBox);
           }
 
-          frag.appendChild(dia);
+          if (evPesq.length) {
+            pesqTemAlgo = true;
+            const diaBox = document.createElement('div');
+            diaBox.className = 'dia';
+
+            const titulo = document.createElement('div');
+            titulo.className = 'dia-titulo';
+            titulo.textContent = brDate;
+            diaBox.appendChild(titulo);
+
+            evPesq.forEach(ev => {
+              const box = document.createElement('div');
+              box.className = 'ev';
+              box.style.borderLeftColor = ev.color || '#1a73e8';
+
+              const hora = document.createElement('span');
+              hora.className = 'hora';
+              hora.textContent = `${ev.start}–${ev.end} `;
+              box.appendChild(hora);
+
+              const sum = document.createElement('span');
+              sum.textContent = ev.summary;
+              box.appendChild(sum);
+
+              diaBox.appendChild(box);
+            });
+
+            pesqBody.appendChild(diaBox);
+          }
         });
 
+        if (!servTemAlgo) {
+          servBody.innerHTML = '<div class="col-empty">Sem eventos de Servidores.</div>';
+        }
+        if (!pesqTemAlgo) {
+          pesqBody.innerHTML = '<div class="col-empty">Sem eventos de Pesquisadores.</div>';
+        }
+
         agendaBody.innerHTML = '';
-        agendaBody.appendChild(frag);
+        agendaBody.appendChild(cols);
 
       } catch (err) {
         agendaBody.textContent = "Erro ao carregar a agenda: " + err.message;
@@ -566,14 +488,11 @@
       openAgenda();
       carregarAgenda(); // carrega ao abrir
     }
-    btnRefresh.addEventListener('click', carregarAgenda);
+    document.getElementById('btnRefreshAgenda').addEventListener('click', carregarAgenda);
 
+    // Expor funções para o HTML
     window.initAgenda = initAgenda;
     window.closeAgenda = closeAgenda;
   </script>
 </body>
 </html>
-
-
-
-
