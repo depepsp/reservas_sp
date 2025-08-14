@@ -80,12 +80,22 @@
     #agendaModal { position: fixed; inset: 0; display: none; z-index: 2000000; }
     #agendaModal.active { display: block; }
     #agendaModal .backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.35); }
-    #agendaModal .panel {
-      position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
-      width: min(92vw, 760px); max-height: 85vh;
-      background: #fff; border-radius: 10px; box-shadow: 0 12px 28px rgba(0,0,0,.2);
-      display: flex; flex-direction: column; overflow: hidden;
-    }
+#agendaModal .panel {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  /* antes: width: min(92vw, 760px); max-height: 85vh; */
+  width: min(96vw, 980px);
+  max-height: 92vh;
+
+  background: #fff; border-radius: 10px; box-shadow: 0 12px 28px rgba(0,0,0,.2);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+/* Tipografia mais compacta no modal */
+#agendaModal { font-size: 14px; }              /* base menor dentro do modal */
+.panel-title { font-size: 16px; }               /* antes era 18px */
+.col-header  { font-size: 14px; }               /* cabeçalho das colunas */
+.dia-titulo  { font-size: 13px; }               /* data do dia */
+.ev          { font-size: 13px; line-height: 1.25; }
+.ev .hora    { font-weight: 600; margin-right: 6px; }
     .panel-header {
       padding: 12px 14px; border-bottom: 1px solid #eee; display: flex; align-items: center; justify-content: space-between; gap: 8px;
     }
@@ -97,7 +107,7 @@
     .panel-close {
       border: none; background: transparent; font-size: 22px; line-height: 1; cursor: pointer; margin-left: 4px;
     }
-    .panel-body { padding: 12px 16px; overflow: auto; }
+    .panel-body { padding: 10px 12px; overflow: auto; }
     .modal-loading { display: flex; align-items: center; justify-content: center; color: #333; font-weight: 600; height: 240px; }
     .modal-loading .spinner { margin-right: 10px; }
 
@@ -122,13 +132,13 @@
       background: #f7f7f7;
       border-bottom: 1px solid #eee;
     }
-    .col-body { padding: 10px 12px; }
+    .col-body { padding: 8px 10px; }
     .dia { margin-top: 14px; }
     .dia-titulo { font-weight: 700; margin-bottom: 6px; }
     .ev {
       border: 1px solid #ddd;
       border-left: 6px solid;
-      padding: 6px 8px;
+      padding: 5px 8px;
       margin: 6px 0;
       border-radius: 6px;
       background: #fafafa;
@@ -496,4 +506,5 @@
   </script>
 </body>
 </html>
+
 
