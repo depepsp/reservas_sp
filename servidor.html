@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Servidor – Sala de Pesquisadores (BC/SP)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
+<style>
+  body { font-family: Arial, sans-serif; margin:0; }
+  header { padding:12px 16px; border-bottom:1px solid #eee; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 8px 16px; }
+  #calendar { max-width: 1100px; margin: 12px auto; }
+  .box { border:1px solid #ddd; padding:10px; border-radius:8px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:end; }
+  label { display:flex; flex-direction:column; font-size:13px; }
+  input, select, button { padding:8px; }
+  button { cursor:pointer; }
+  .hint { font-size:12px; color:#666; }
+</style>
+</head>
+<body>
+<header class="wrap">
+  <strong>Servidor – Calendário da Sala (09:00–19:00)</strong>
+  <span class="hint">Crie eventos simples ou série semanal.</span>
+</header>
+
+<section class="wrap">
+  <div class="box" style="margin-bottom:12px;">
+    <div class="row">
+      <label>Seu nome
+        <input id="nome" placeholder="Ex.: Maria Silva">
+      </label>
+      <label>Data
+        <input id="date" type="date">
+      </label>
+      <label>Início
+        <input id="start" type="time" value="09:00" step="900">
+      </label>
+      <label>Fim
+        <input id="end" type="time" value="10:00" step="900">
+      </label>
+      <button id="btnCreate">Criar (Servidor)</button>
+    </div>
+  </div>
+
+  <div class="box">
+    <strong>Série semanal (Servidor)</strong>
+    <div class="row" style="margin-top:8px;">
+      <label>De (data)
+        <input id="serieFrom" type="date">
+      </label>
+      <label>Até (data)
+        <input id="serieTo" type="date">
+      </label>
+      <label>Início
+        <input id="serieStart" type="time" value="09:00" step="900">
+      </label>
+      <label>Fim
+        <input id="serieEnd" type="time" value="10:00" step="900">
+      </label>
+    </div>
+    <div class="row" style="margin-top:6px;">
+      <label><input type="checkbox" class="wd" value="1" checked> Segunda</label>
+      <label><input type="checkbox" class="wd" value="2" checked> Terça</label>
+      <label><input type="checkbox" class="wd" value="3" checked> Quarta</label>
+      <label><input type="checkbox" class="wd" value="4" checked> Quinta</label>
+      <label><input type="checkbox" class="wd" value="5" checked> Sexta</label>
+      <button id="btnSerie">Criar série</button>
+    </div>
+    <div class="hint">A série é cortada automaticamente ao horizonte de 60 dias.</div>
+  </div>
+</section>
+
+<div id="calendar" class="wrap"></div>
+
+<script>
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx1BnYihp9d_z0IX7YQea6F29_rfJOWEwHxRe8QtEXEcNxbysIlIv8g4DC2SnXMe6bq/exec";
+const ROLE = "servidor";
+const SECRET = "depep2025"; // SECRET_SERVIDOR
+
+// helpers fetch simples (sem preflight)
+async function apiGet(params){
+  const url = WEB_APP_URL + "?" + new URLSearchParams(params).toString();
+  const r = await fetch(url, { method:"GET" });
+  if (!r.ok) throw new Error("HTTP "+r.status);
+  return await r.json();
+}
+async function apiPost(obj){
+  const r = await fetch(WEB_APP_URL, {
+    method:"POST",
+    headers:{
+      "Content-Type":"text/plain;charset=UTF-8",
+      "X-Role": ROLE,
+      "X-Secret": SECRET
+    },
+    body: JSON.stringify(obj)
+  });
+  const j = await r.json().catch(()=>({status:"erro",mensagem:"Falha JSON"}));
+  if (!r.ok || j.status==="erro") throw new Error(j.mensagem || ("HTTP "+r.status));
+  return j;
+}
+
+document.getElementById("btnCreate").onclick = async ()=>{
+  const nome  = document.getElementById("nome").value.trim();
+  const date  = document.getElementById("date").value;
+  const start = document.getElementById("start").value;
+  const end   = document.getElementById("end").value;
+  if (!nome||!date||!start||!end){ alert("Preencha nome/data/início/fim."); return; }
+  try{
+    await apiPost({action:"create", tipo:"Servidor", nome, date, start, end});
+    calendar.refetchEvents();
+  }catch(e){ alert(e.message); }
+};
+
+document.getElementById("btnSerie").onclick = async ()=>{
+  const nome  = document.getElementById("nome").value.trim();
+  const from  = document.getElementById("serieFrom").value;
+  const to    = document.getElementById("serieTo").value;
+  const start = document.getElementById("serieStart").value;
+  const end   = document.getElementById("serieEnd").value;
+  const days  = [...document.querySelectorAll(".wd:checked")].map(i=>parseInt(i.value,10));
+  if (!nome||!from||!to||!start||!end||!days.length){ alert("Preencha todos os campos da série."); return; }
+  try{
+    const res = await apiPost({action:"createSeries", pattern:{from,to,byWeekday:days}, start, end, nome});
+    alert(`Criados: ${res.created.length} | Pulados: ${res.skipped.length}`);
+    calendar.refetchEvents();
+  }catch(e){ alert(e.message); }
+};
+
+let calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
+  initialView: 'timeGridWeek',
+  slotMinTime: "09:00:00",
+  slotMaxTime: "19:00:00",
+  allDaySlot: false,
+  locale: 'pt-br',
+  height: 'auto',
+  nowIndicator: true,
+  expandRows: true,
+  firstDay: 1,
+  selectable: true,
+  headerToolbar: {
+    left: 'prev,next today',
+    center: 'title',
+    right: 'timeGridWeek,timeGridDay,dayGridMonth'
+  },
+  events: async (info, success, failure)=>{
+    try{
+      const s = info.startStr.substring(0,10);
+      const e = info.endStr.substring(0,10);
+      const data = await apiGet({action:"list", start:s, end:e});
+      success(data.events || []);
+    }catch(err){ failure(err); }
+  },
+  select: async (sel)=>{
+    const nome = document.getElementById("nome").value.trim();
+    if (!nome){ alert("Informe seu nome acima antes de criar."); calendar.unselect(); return; }
+    const ymd = sel.startStr.substring(0,10);
+    const hs  = sel.startStr.substring(11,16);
+    const he  = sel.endStr.substring(11,16);
+    try{
+      await apiPost({action:"create", tipo:"Servidor", nome, date: ymd, start: hs, end: he});
+      calendar.refetchEvents();
+    }catch(e){ alert(e.message); }
+  },
+  eventClick: async (info)=>{
+    const id = info.event.id;
+    const what = prompt("Digite 'del' para apagar, 'ok' para confirmar presença:", "");
+    if (!what) return;
+    try{
+      if (what.toLowerCase()==="del"){
+        await apiPost({action:"delete", id});
+      } else if (what.toLowerCase()==="ok"){
+        await apiPost({action:"confirmServer", id});
+      } else {
+        alert("Comando não reconhecido.");
+        return;
+      }
+      calendar.refetchEvents();
+    }catch(e){ alert(e.message); }
+  }
+});
+calendar.render();
+</script>
+</body>
+</html>
