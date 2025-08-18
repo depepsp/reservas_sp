@@ -1,0 +1,352 @@
+/*********************** CONFIG *************************/
+const SPREADSHEET_ID = "1J1pGAg89RZZnD2y27QVSwP8JFoGDu8hR7xs0GmtJQDo"; // <-- sua planilha
+const ABA_RESERVAS   = "Reservas";
+const ABA_CONFIG     = "Configuração";
+const TZ             = Session.getScriptTimeZone();
+
+// Janela de funcionamento
+const ABERTURA       = "09:00";
+const FECHAMENTO     = "19:00";
+
+// Tamanho do slot para cálculo de dias lotados (minutos)
+const SLOT_MIN       = 15;
+
+// Calendário público
+const CALENDAR_ID    = "8b41303a9fd533be7c17e4a4fd1742c5f87d65f1cf0d81f90e0332d48c7f7495@group.calendar.google.com";
+
+/*********************** HELPERS HTTP *******************/
+function jsonOut_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+function errOut_(msg, httpCode) {
+  return jsonOut_({ status: "erro", mensagem: msg, code: httpCode || 400 });
+}
+
+/*********************** ROTEADOR WEB APP ***************/
+function doGet(e) {
+  var action = e && e.parameter && e.parameter.action ? e.parameter.action : "";
+
+  try {
+    if (action === "diasLotados") {
+      var tipo = e.parameter.tipo || "";
+      var dias = getDiasLotados(tipo);
+      return jsonOut_(dias); // ['yyyy-MM-dd', ...]
+    }
+
+    if (action === "agendaJson") {
+      var payload = montarAgendaJson_(); // {days:[{date, events:[{start,end,summary,color,type}]}]}
+      return jsonOut_(payload);
+    }
+
+    if (action === "ping") {
+      return jsonOut_({ status: "ok", abertura: ABERTURA, fechamento: FECHAMENTO, now: new Date() });
+    }
+
+    // Sem action => serve a página
+    return HtmlService.createHtmlOutputFromFile('index')
+      .setTitle("Reserva da Sala de Pesquisadores - BC/SP");
+
+  } catch (err) {
+    return errOut_("Falha no doGet: " + err, 500);
+  }
+}
+
+function doPost(e) {
+  try {
+    // O front envia "text/plain" com JSON para evitar preflight
+    var body = {};
+    if (e && e.postData && e.postData.contents) {
+      try { body = JSON.parse(e.postData.contents || "{}"); } catch (ex) { body = {}; }
+    } else if (e && e.parameter) {
+      body = e.parameter;
+    }
+
+    var action = body.action || "";
+    if (action === "reservar") {
+      var resp = processarFormulario(body);
+      return jsonOut_(resp); // {status:"ok"} | {status:"erro", mensagem:"..."}
+    }
+
+    return errOut_("Ação inválida no doPost: " + action, 400);
+
+  } catch (err) {
+    return errOut_("Falha no doPost: " + err, 500);
+  }
+}
+
+/******** API: cálculo de dias lotados (datepicker) *****/
+function getDiasLotados(tipoSelecionado) {
+  // Servidor não tem bloqueio por lotação (só fds/passado no front)
+  if (tipoSelecionado === "Servidor do Depep") return [];
+
+  const HORIZON_DAYS = 60;
+  const tz = TZ;
+
+  const ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(ABA_RESERVAS);
+  const cfg   = ss.getSheetByName(ABA_CONFIG);
+  const servidorObrigatorio = !!cfg.getRange("B1").getValue();
+
+  const values = sheet.getDataRange().getValues(); // [ts, data, início, fim, tipo, nome]
+
+  // Indexa por dia
+  var porDia = {};
+  for (var i = 1; i < values.length; i++) {
+    var linha = values[i];
+    var data = linha[1], ini = linha[2], fim = linha[3], tipo = linha[4];
+    if (!data || !ini || !fim || !tipo) continue;
+
+    var dStr  = Utilities.formatDate(new Date(data), tz, "yyyy-MM-dd");
+    var hIni  = Utilities.formatDate(new Date(ini),  tz, "HH:mm");
+    var hFim  = Utilities.formatDate(new Date(fim),  tz, "HH:mm");
+    var start = Utilities.parseDate(dStr + " " + hIni, tz, "yyyy-MM-dd HH:mm");
+    var end   = Utilities.parseDate(dStr + " " + hFim, tz, "yyyy-MM-dd HH:mm");
+
+    if (!porDia[dStr]) porDia[dStr] = [];
+    porDia[dStr].push({ start: start, end: end, tipo: tipo });
+  }
+
+  // Dias de hoje até +60 (úteis)
+  var hoje = new Date(); hoje.setHours(0,0,0,0);
+  var diasParaAvaliar = [];
+  for (var off = 0; off <= HORIZON_DAYS; off++) {
+    var dia = new Date(hoje.getTime() + off*24*60*60*1000);
+    var dow = dia.getDay(); // 0 dom, 6 sáb
+    if (dow === 0 || dow === 6) continue;
+    var dStr = Utilities.formatDate(dia, tz, "yyyy-MM-dd");
+    diasParaAvaliar.push(dStr);
+    if (!porDia[dStr]) porDia[dStr] = [];
+  }
+
+  var lotados = [];
+  var aberturaMin   = ABERTURA;
+  var fechamentoMin = FECHAMENTO;
+
+  for (var di = 0; di < diasParaAvaliar.length; di++) {
+    var dStr = diasParaAvaliar[di];
+    var reservas = porDia[dStr];
+
+    var dayStart = Utilities.parseDate(dStr + " " + aberturaMin,   tz, "yyyy-MM-dd HH:mm");
+    var dayEnd   = Utilities.parseDate(dStr + " " + fechamentoMin, tz, "yyyy-MM-dd HH:mm");
+
+    var existeSlotDisponivel = false;
+
+    for (var t = dayStart.getTime(); t < dayEnd.getTime(); t += SLOT_MIN * 60000) {
+      var slotIni = new Date(t);
+      var slotFim = new Date(t + SLOT_MIN * 60000);
+
+      var pesquisadoresNoSlot = 0;
+      var servidorCobreSlot   = false;
+
+      for (var r = 0; r < reservas.length; r++) {
+        var rec = reservas[r];
+        var sobrepoe = (slotIni < rec.end) && (slotFim > rec.start);
+        if (!sobrepoe) continue;
+
+        if (rec.tipo === "Pesquisador externo ou Estagiário do BC") {
+          pesquisadoresNoSlot++;
+        } else if (rec.tipo === "Servidor do Depep") {
+          // servidor precisa cobrir TODO o slot
+          if (rec.start <= slotIni && rec.end >= slotFim) servidorCobreSlot = true;
+        }
+      }
+
+      var capacidadeOk = (pesquisadoresNoSlot < 7);
+      var servidorOk   = (!servidorObrigatorio) || servidorCobreSlot;
+
+      if (capacidadeOk && servidorOk) {
+        existeSlotDisponivel = true;
+        break; // achou qualquer janelinha: dia NÃO é lotado
+      }
+    }
+
+    if (!existeSlotDisponivel) {
+      lotados.push(dStr);
+    }
+  }
+
+  return lotados; // ['yyyy-MM-dd', ...]
+}
+
+/******** API: processamento do envio (POST reservar) **/
+function processarFormulario(dadosForm) {
+  const nome       = dadosForm.nome;
+  const dataStr    = dadosForm.data;
+  const horaInicio = dadosForm.inicio;
+  const horaFim    = dadosForm.fim;
+  const tipo       = dadosForm.tipo;
+
+  const data = Utilities.parseDate(dataStr, TZ, "yyyy-MM-dd");
+  const dow  = data.getDay();
+  if (dow === 0 || dow === 6) {
+    return { status: "erro", mensagem: "Somente dias úteis são permitidos." };
+  }
+
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  if (data < hoje) {
+    return { status: "erro", mensagem: "Não é possível agendar para datas anteriores a hoje." };
+  }
+
+  const start = Utilities.parseDate(`${dataStr} ${horaInicio}`, TZ, "yyyy-MM-dd HH:mm");
+  const end   = Utilities.parseDate(`${dataStr} ${horaFim}`,    TZ, "yyyy-MM-dd HH:mm");
+
+  const horaAbertura   = Utilities.parseDate(`${dataStr} ${ABERTURA}`,   TZ, "yyyy-MM-dd HH:mm");
+  const horaFechamento = Utilities.parseDate(`${dataStr} ${FECHAMENTO}`, TZ, "yyyy-MM-dd HH:mm");
+
+  if (start < horaAbertura || end > horaFechamento || start >= end) {
+    return {
+      status: "erro",
+      mensagem: "Horário inválido. A sala só funciona das " + ABERTURA + " às " + FECHAMENTO + "."
+    };
+  }
+
+  const ss    = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(ABA_RESERVAS);
+  const cfg   = ss.getSheetByName(ABA_CONFIG);
+  const servidorObrigatorio = !!cfg.getRange("B1").getValue();
+
+  const rows = sheet.getDataRange().getValues();
+  let countPesq   = 0;
+  let temServidor = false;
+
+  for (let i = 1; i < rows.length; i++) {
+    const linha = rows[i];
+    const dPlan = Utilities.formatDate(new Date(linha[1]), TZ, "yyyy-MM-dd");
+    if (dPlan !== dataStr) continue;
+
+    const hIniStr = Utilities.formatDate(new Date(linha[2]), TZ, "HH:mm");
+    const hFimStr = Utilities.formatDate(new Date(linha[3]), TZ, "HH:mm");
+    const ini = Utilities.parseDate(`${dataStr} ${hIniStr}`, TZ, "yyyy-MM-dd HH:mm");
+    const fim = Utilities.parseDate(`${dataStr} ${hFimStr}`, TZ, "yyyy-MM-dd HH:mm");
+    const tipoExist = linha[4];
+
+    const sobrepoe =
+      (start >= ini && start < fim) ||
+      (end > ini && end <= fim) ||
+      (start <= ini && end >= fim);
+
+    if (sobrepoe && tipoExist === "Pesquisador externo ou Estagiário do BC") {
+      countPesq++;
+    }
+
+    const servidorCobreTodo = (tipoExist === "Servidor do Depep" && ini <= start && fim >= end);
+    if (servidorCobreTodo) temServidor = true;
+  }
+
+  if (tipo === "Pesquisador externo ou Estagiário do BC") {
+    if (countPesq >= 7) {
+      return { status: "erro", mensagem: "A Sala de Pesquisadores de SP está lotada nesse dia e horário." };
+    }
+    if (servidorObrigatorio && !temServidor) {
+      return { status: "erro", mensagem: "É necessário haver pelo menos 1 Servidor do Depep presente no mesmo horário." };
+    }
+  }
+
+  // Persiste na planilha
+  sheet.appendRow([ new Date(), dataStr, horaInicio, horaFim, tipo, nome ]);
+
+  // Cria evento na agenda com cor por tipo
+  try {
+    const cal = CalendarApp.getCalendarById(CALENDAR_ID);
+    if (cal) {
+      const titulo = (tipo === "Servidor do Depep") ? `Depep - ${nome}` : `Pesquisador - ${nome}`;
+      const cor    = (tipo === "Servidor do Depep") ? CalendarApp.EventColor.PALE_GREEN
+                                                    : CalendarApp.EventColor.BOLD_BLUE;
+      cal.createEvent(titulo, start, end).setColor(cor);
+    }
+  } catch (err) {
+    Logger.log("Erro ao criar evento: " + err);
+  }
+
+  return { status: "ok" };
+}
+
+/************ AGENDA JSON (para o modal do HTML) ********/
+function montarAgendaJson_() {
+  var hoje = new Date(); hoje.setHours(0,0,0,0);
+  var ate  = new Date(hoje.getTime() + 60*24*60*60*1000);
+  ate.setHours(23,59,59,999);
+
+  var itens = [];
+
+  // Tenta Calendar API avançada; se não estiver ativa, usa CalendarApp
+  try {
+    var params = {
+      singleEvents: true,
+      orderBy: "startTime",
+      timeMin: hoje.toISOString(),
+      timeMax: ate.toISOString(),
+      maxResults: 500
+    };
+    var resp = Calendar.Events.list(CALENDAR_ID, params);
+    (resp.items || []).forEach(function(ev) {
+      var s = ev.start && (ev.start.dateTime || ev.start.date);
+      var e = ev.end   && (ev.end.dateTime   || ev.end.date);
+      if (!s || !e) return;
+      itens.push({
+        summary: ev.summary || "",
+        start: new Date(s),
+        end:   new Date(e),
+        colorId: ev.colorId || null
+      });
+    });
+  } catch (e) {
+    var cal = CalendarApp.getCalendarById(CALENDAR_ID);
+    cal.getEvents(hoje, ate).forEach(function(ev) {
+      itens.push({
+        summary: ev.getTitle(),
+        start: ev.getStartTime(),
+        end:   ev.getEndTime(),
+        colorId: null
+      });
+    });
+  }
+
+  // Agrupa por dia e prepara estrutura
+  var tz   = TZ;
+  var porDia = {};
+  itens.forEach(function(it) {
+    var dStr = Utilities.formatDate(it.start, tz, "yyyy-MM-dd");
+    if (!porDia[dStr]) porDia[dStr] = [];
+    porDia[dStr].push({
+      start: Utilities.formatDate(it.start, tz, "HH:mm"),
+      end:   Utilities.formatDate(it.end,   tz, "HH:mm"),
+      summary: it.summary || "",
+      color: corEvento_(it),
+      type:  tipoEvento_(it.summary) // "servidor" | "pesquisador" | "outro"
+    });
+  });
+
+  // Ordena por hora dentro do dia
+  var dias = Object.keys(porDia).sort();
+  var daysArr = dias.map(function(dStr) {
+    var lista = porDia[dStr];
+    lista.sort(function(a,b){ return a.start.localeCompare(b.start); });
+    return { date: dStr, events: lista };
+  });
+
+  return { days: daysArr };
+}
+
+// Mapeia cor do evento para a agenda JSON
+function corEvento_(it) {
+  var s = (it.summary || "").toLowerCase();
+  // Mantém o padrão que você usa na criação (verde claro para servidor, azul escuro para pesquisador)
+  if (s.startsWith("depep -")) {
+    return "#A5D6A7"; // verde claro aproximado do PALE_GREEN
+  }
+  if (s.startsWith("pesquisador -")) {
+    return "#1a73e8"; // azul escuro
+  }
+  // fallback
+  return "#9e9e9e";
+}
+
+// Identifica tipo de evento pela convenção do título
+function tipoEvento_(summary) {
+  var s = (summary || "").toLowerCase();
+  if (s.startsWith("depep -")) return "servidor";
+  if (s.startsWith("pesquisador -")) return "pesquisador";
+  return "outro";
+}
