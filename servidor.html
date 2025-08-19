@@ -428,12 +428,18 @@ document.getElementById('btnConfirmNew').onclick = async ()=>{
     setLoading(true);
 
     // criação simples
-    const res = await apiPost({ action:"create", tipo:"Servidor do Depep", nome, date: ymd, start, end });
-    // espera: {status:"ok", id, token}
-    if (res && res.token){
-      alert(`Evento criado! Guarde seu token:\n\n${res.token}`);
-      // mostra também no topo do modal de detalhes da criação?
-    }
+    const res = await apiPost({
+  action: "create",
+  tipo:   "Servidor do Depep",
+  nome, date, start, end
+});
+calendar.refetchEvents();
+const token = (res && res.payload && res.payload.token) ? res.payload.token : "(sem token)";
+alert("Evento criado!\n\n" +
+      `Data/Horário: ${date} ${start}–${end}\n` +
+      `Token para editar/cancelar: ${token}\n\n` +
+      "Guarde esse token.");
+
 
     // recorrência semanal (mesmo dia/horário) — opcional
     if (recWeekly){
