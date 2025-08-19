@@ -40,7 +40,7 @@
       <label>Fim
         <input id="end" type="time" value="10:00" step="900">
       </label>
-      <button id="btnCreate">Criar (Servidor)</button>
+      <button id="btnCreate">Criar ("Servidor do Depep")</button>
     </div>
   </div>
 
@@ -89,12 +89,12 @@ async function apiGet(params){
 async function apiPost(obj){
   const r = await fetch(WEB_APP_URL, {
     method:"POST",
-    headers:{
-      "Content-Type":"text/plain;charset=UTF-8",
-      "X-Role": ROLE,
-      "X-Secret": SECRET
-    },
-    body: JSON.stringify(obj)
+    headers:{ "Content-Type":"text/plain;charset=UTF-8" }, // só isso
+    body: JSON.stringify({
+      ...obj,
+      role: ROLE,        // <- vai no body
+      secret: SECRET     // <- vai no body
+    })
   });
   const j = await r.json().catch(()=>({status:"erro",mensagem:"Falha JSON"}));
   if (!r.ok || j.status==="erro") throw new Error(j.mensagem || ("HTTP "+r.status));
@@ -108,7 +108,7 @@ document.getElementById("btnCreate").onclick = async ()=>{
   const end   = document.getElementById("end").value;
   if (!nome||!date||!start||!end){ alert("Preencha nome/data/início/fim."); return; }
   try{
-    await apiPost({action:"create", tipo:"Servidor", nome, date, start, end});
+    await apiPost({action:"create", tipo:"Servidor do Depep", nome, date: ymd, start: hs, end: he});
     calendar.refetchEvents();
   }catch(e){ alert(e.message); }
 };
