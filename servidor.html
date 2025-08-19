@@ -7,22 +7,25 @@
 <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
 <style>
-  body { font-family: Arial, sans-serif; margin:0; }
+  :root { --maxw: 1100px; }
+  body { font-family: Arial, sans-serif; margin:0; background:#fff; }
   header { padding:12px 16px; border-bottom:1px solid #eee; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-  .wrap { max-width: 1100px; margin: 0 auto; padding: 8px 16px; }
-  #calendar { max-width: 1100px; margin: 12px auto; }
-  .box { border:1px solid #ddd; padding:10px; border-radius:8px; }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 8px 16px; }
+  .box { border:1px solid #ddd; padding:10px; border-radius:8px; background:#fafafa; }
   .row { display:flex; gap:10px; flex-wrap:wrap; align-items:end; }
-  label { display:flex; flex-direction:column; font-size:13px; }
-  input, select, button { padding:8px; }
+  label { display:flex; flex-direction:column; font-size:13px; min-width: 180px; }
+  input, button { padding:8px; }
   button { cursor:pointer; }
+  #calendar { max-width: var(--maxw); margin: 12px auto; }
   .hint { font-size:12px; color:#666; }
+  .ok { color:#0a7a0a; }
+  .err { color:#b00020; }
 </style>
 </head>
 <body>
 <header class="wrap">
   <strong>Servidor – Calendário da Sala (09:00–19:00)</strong>
-  <span class="hint">Crie eventos simples ou série semanal.</span>
+  <span class="hint">Crie eventos para servidores (regras de horário e dia útil ativas).</span>
 </header>
 
 <section class="wrap">
@@ -35,51 +38,24 @@
         <input id="date" type="date">
       </label>
       <label>Início
-        <input id="start" type="time" value="09:00" step="900">
+        <input id="start" type="time" value="09:00" step="1800">
       </label>
       <label>Fim
-        <input id="end" type="time" value="10:00" step="900">
+        <input id="end" type="time" value="10:00" step="1800">
       </label>
-      <button id="btnCreate">Criar ("Servidor do Depep")</button>
+      <button id="btnCreate">Criar (Servidor)</button>
     </div>
-  </div>
-
-  <div class="box">
-    <strong>Série semanal (Servidor)</strong>
-    <div class="row" style="margin-top:8px;">
-      <label>De (data)
-        <input id="serieFrom" type="date">
-      </label>
-      <label>Até (data)
-        <input id="serieTo" type="date">
-      </label>
-      <label>Início
-        <input id="serieStart" type="time" value="09:00" step="900">
-      </label>
-      <label>Fim
-        <input id="serieEnd" type="time" value="10:00" step="900">
-      </label>
-    </div>
-    <div class="row" style="margin-top:6px;">
-      <label><input type="checkbox" class="wd" value="1" checked> Segunda</label>
-      <label><input type="checkbox" class="wd" value="2" checked> Terça</label>
-      <label><input type="checkbox" class="wd" value="3" checked> Quarta</label>
-      <label><input type="checkbox" class="wd" value="4" checked> Quinta</label>
-      <label><input type="checkbox" class="wd" value="5" checked> Sexta</label>
-      <button id="btnSerie">Criar série</button>
-    </div>
-    <div class="hint">A série é cortada automaticamente ao horizonte de 60 dias.</div>
+    <div id="msg" class="hint" style="margin-top:6px;"></div>
   </div>
 </section>
 
 <div id="calendar" class="wrap"></div>
 
 <script>
-const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxjozQ0uqsL1brvYl9o3C5qmQRLvBSj-5OANkCabVuNQdWzzqV2gXWOHp6ZMA1ekFeD/exec";
-const ROLE = "servidor";
-const SECRET = "depep2025"; // SECRET_SERVIDOR
+/* Cole aqui o URL /exec da sua implantação */
+const WEB_APP_URL = "https://script.google.com/macros/s/SEU_DEPLOY_ID/exec";
 
-// helpers fetch simples (sem preflight)
+/* ===== helpers de chamada (sem preflight) ===== */
 async function apiGet(params){
   const url = WEB_APP_URL + "?" + new URLSearchParams(params).toString();
   const r = await fetch(url, { method:"GET" });
@@ -89,49 +65,51 @@ async function apiGet(params){
 async function apiPost(obj){
   const r = await fetch(WEB_APP_URL, {
     method:"POST",
-    headers:{ "Content-Type":"text/plain;charset=UTF-8" }, // só isso
-    body: JSON.stringify({
-      ...obj,
-      role: ROLE,        // <- vai no body
-      secret: SECRET     // <- vai no body
-    })
+    headers:{ "Content-Type":"text/plain;charset=UTF-8" }, // simples
+    body: JSON.stringify(obj)
   });
   const j = await r.json().catch(()=>({status:"erro",mensagem:"Falha JSON"}));
   if (!r.ok || j.status==="erro") throw new Error(j.mensagem || ("HTTP "+r.status));
   return j;
 }
 
-document.getElementById("btnCreate").onclick = async ()=>{
-  const nome  = document.getElementById("nome").value.trim();
-  const date  = document.getElementById("date").value;
-  const start = document.getElementById("start").value;
-  const end   = document.getElementById("end").value;
-  if (!nome||!date||!start||!end){ alert("Preencha nome/data/início/fim."); return; }
+const $ = (id)=>document.getElementById(id);
+const msg = $("msg");
+
+/* ===== criação via formulário ===== */
+$("btnCreate").onclick = async ()=>{
+  msg.className = "hint";
+  msg.textContent = "";
+  const nome  = $("nome").value.trim();
+  const date  = $("date").value;
+  const start = $("start").value;
+  const end   = $("end").value;
+  if (!nome||!date||!start||!end){
+    msg.className = "hint err";
+    msg.textContent = "Preencha nome, data, início e fim.";
+    return;
+  }
   try{
-    await apiPost({action:"create", tipo:"Servidor do Depep", nome, date: ymd, start: hs, end: he});
+    await apiPost({
+      action: "create",
+      tipo:   "Servidor",      // o backend normaliza para "Servidor do Depep"
+      nome, date, start, end
+    });
+    msg.className = "hint ok";
+    msg.textContent = "Reserva criada com sucesso.";
     calendar.refetchEvents();
-  }catch(e){ alert(e.message); }
+  }catch(e){
+    msg.className = "hint err";
+    msg.textContent = e.message;
+  }
 };
 
-document.getElementById("btnSerie").onclick = async ()=>{
-  const nome  = document.getElementById("nome").value.trim();
-  const from  = document.getElementById("serieFrom").value;
-  const to    = document.getElementById("serieTo").value;
-  const start = document.getElementById("serieStart").value;
-  const end   = document.getElementById("serieEnd").value;
-  const days  = [...document.querySelectorAll(".wd:checked")].map(i=>parseInt(i.value,10));
-  if (!nome||!from||!to||!start||!end||!days.length){ alert("Preencha todos os campos da série."); return; }
-  try{
-    const res = await apiPost({action:"createSeries", pattern:{from,to,byWeekday:days}, start, end, nome});
-    alert(`Criados: ${res.created.length} | Pulados: ${res.skipped.length}`);
-    calendar.refetchEvents();
-  }catch(e){ alert(e.message); }
-};
-
+/* ===== FullCalendar ===== */
 let calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
   initialView: 'timeGridWeek',
   slotMinTime: "09:00:00",
   slotMaxTime: "19:00:00",
+  slotDuration: "00:30:00",     // intervalos de 30 min
   allDaySlot: false,
   locale: 'pt-br',
   height: 'auto',
@@ -146,6 +124,7 @@ let calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
   },
   events: async (info, success, failure)=>{
     try{
+      // FullCalendar envia ISO; backend espera yyyy-MM-dd
       const s = info.startStr.substring(0,10);
       const e = info.endStr.substring(0,10);
       const data = await apiGet({action:"list", start:s, end:e});
@@ -153,31 +132,25 @@ let calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
     }catch(err){ failure(err); }
   },
   select: async (sel)=>{
-    const nome = document.getElementById("nome").value.trim();
-    if (!nome){ alert("Informe seu nome acima antes de criar."); calendar.unselect(); return; }
+    // criar arrastando/selecionando no grid
+    const nome = $("nome").value.trim();
+    if (!nome){
+      alert("Informe seu nome (campo acima) antes de criar.");
+      calendar.unselect();
+      return;
+    }
     const ymd = sel.startStr.substring(0,10);
     const hs  = sel.startStr.substring(11,16);
     const he  = sel.endStr.substring(11,16);
     try{
-      await apiPost({action:"create", tipo:"Servidor", nome, date: ymd, start: hs, end: he});
+      await apiPost({ action:"create", tipo:"Servidor", nome, date: ymd, start: hs, end: he });
       calendar.refetchEvents();
     }catch(e){ alert(e.message); }
   },
   eventClick: async (info)=>{
-    const id = info.event.id;
-    const what = prompt("Digite 'del' para apagar, 'ok' para confirmar presença:", "");
-    if (!what) return;
-    try{
-      if (what.toLowerCase()==="del"){
-        await apiPost({action:"delete", id});
-      } else if (what.toLowerCase()==="ok"){
-        await apiPost({action:"confirmServer", id});
-      } else {
-        alert("Comando não reconhecido.");
-        return;
-      }
-      calendar.refetchEvents();
-    }catch(e){ alert(e.message); }
+    // por enquanto só informativo; rotas de delete/confirm não estão ativas
+    const ev = info.event;
+    alert(`${ev.title}\n${ev.start.toLocaleString()} — ${ev.end.toLocaleString()}`);
   }
 });
 calendar.render();
