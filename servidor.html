@@ -59,7 +59,7 @@
       </label>
       <button id="btnCreate" class="btn primary">Criar (Servidor)</button>
     </div>
-    <div class="hint" style="margin-top:6px;">Dica: o horário permitido é 09:00–19:00. A grade exibe passos de 30 minutos (você pode digitar minutos “quebrados”, se necessário).</div>
+    <div class="hint" style="margin-top:6px;">Dica: o horário permitido é 09:00–19:00. O intervalo da grade é de 30 minutos.</div>
   </div>
 </section>
 
@@ -73,7 +73,7 @@
       <h3 class="panel-tt" id="evtTitle">Detalhes do evento</h3>
       <button class="btn" onclick="closeEvt()" aria-label="Fechar">Fechar</button>
     </div>
-    <div class="panel-bd" id="evtBody"></div>
+    <div class="panel-bd" id="evtBody"><!-- preenchido via JS --></div>
     <div class="panel-ft">
       <button class="btn" onclick="closeEvt()">OK</button>
     </div>
@@ -83,8 +83,6 @@
 <script>
 /* ======= CONFIG ======= */
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxjozQ0uqsL1brvYl9o3C5qmQRLvBSj-5OANkCabVuNQdWzzqV2gXWOHp6ZMA1ekFeD/exec"; // <-- SUBSTITUA pela URL /exec do Apps Script
-const ROLE   = "servidor";     // papel fixo desta tela
-const SECRET = "depep2025";    // igual ao SECRET_SERVIDOR no Code.gs
 
 /* ======= HELPERS de API (CORS simples) ======= */
 async function apiGet(params){
@@ -98,11 +96,7 @@ async function apiPost(obj){
   const r = await fetch(WEB_APP_URL, {
     method: "POST",
     headers: { "Content-Type":"text/plain;charset=UTF-8" }, // só este header!
-    body: JSON.stringify({
-      ...obj,
-      role: ROLE,     // vai no body
-      secret: SECRET  // vai no body
-    })
+    body: JSON.stringify(obj)
   });
   const j = await r.json().catch(()=>({status:"erro",mensagem:"Falha JSON"}));
   if (!r.ok || j.status==="erro") throw new Error(j.mensagem || (`HTTP ${r.status}`));
@@ -120,7 +114,7 @@ function fmtRange(date, start, end){
   return `${date} ${start}–${end}`;
 }
 
-/* ======= Ações UI (botão Criar) ======= */
+/* ======= Ações UI ======= */
 document.getElementById("btnCreate").onclick = async ()=>{
   const nome  = document.getElementById("nome").value.trim();
   const date  = document.getElementById("date").value;            // yyyy-MM-dd
@@ -180,7 +174,6 @@ let calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
       const s = info.startStr.substring(0,10);
       const e = info.endStr.substring(0,10);
       const data = await apiGet({ action:"list", start:s, end:e });
-      // Backend deve retornar: [{id,title,start,end,backgroundColor,borderColor,extendedProps:{tipo,nome}}]
       success(Array.isArray(data.events) ? data.events : []);
     }catch(err){
       console.error(err);
@@ -225,10 +218,9 @@ let calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
     }
   },
 
-  // Clique em evento → mostra detalhes (sem deletar/confirmar por enquanto)
+  // Clique em evento → mostra detalhes (sem excluir/confirmar por enquanto)
   eventClick: (info)=>{
     const ev = info.event;
-    // Se o backend não mandar extendedProps, inferimos pelo título
     const t  = ev.title || "";
     let tipo = (ev.extendedProps && ev.extendedProps.tipo) || (t.toLowerCase().startsWith("depep -") ? "Servidor do Depep" : "Pesquisador");
     let nome = (ev.extendedProps && ev.extendedProps.nome) || t.replace(/^Depep -\s*/i,"").replace(/^Pesquisador -\s*/i,"");
@@ -254,7 +246,7 @@ calendar.render();
 /* ======= Modal helpers ======= */
 function openEvt(){ document.getElementById('evtModal').classList.add('active'); }
 function closeEvt(){ document.getElementById('evtModal').classList.remove('active'); }
-window.closeEvt = closeEvt;
+window.closeEvt = closeEvt; // opcional
 </script>
 </body>
 </html>
