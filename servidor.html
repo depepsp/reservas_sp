@@ -59,7 +59,7 @@
       </label>
       <button id="btnCreate" class="btn primary">Criar (Servidor)</button>
     </div>
-    <div class="hint" style="margin-top:6px;">Dica: o horário permitido é 09:00–19:00. O intervalo mínimo exibido é de 30 minutos (você pode digitar minutos “quebrados”, se necessário).</div>
+    <div class="hint" style="margin-top:6px;">Dica: o horário permitido é 09:00–19:00. A grade exibe passos de 30 minutos (você pode digitar minutos “quebrados”, se necessário).</div>
   </div>
 </section>
 
@@ -73,9 +73,7 @@
       <h3 class="panel-tt" id="evtTitle">Detalhes do evento</h3>
       <button class="btn" onclick="closeEvt()" aria-label="Fechar">Fechar</button>
     </div>
-    <div class="panel-bd" id="evtBody">
-      <!-- preenchido via JS -->
-    </div>
+    <div class="panel-bd" id="evtBody"></div>
     <div class="panel-ft">
       <button class="btn" onclick="closeEvt()">OK</button>
     </div>
@@ -85,8 +83,8 @@
 <script>
 /* ======= CONFIG ======= */
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxjozQ0uqsL1brvYl9o3C5qmQRLvBSj-5OANkCabVuNQdWzzqV2gXWOHp6ZMA1ekFeD/exec"; // <-- SUBSTITUA pela URL /exec do Apps Script
-const ROLE   = "servidor";
-const SECRET = "depep2025"; // igual ao SECRET_SERVIDOR do back
+const ROLE   = "servidor";     // papel fixo desta tela
+const SECRET = "depep2025";    // igual ao SECRET_SERVIDOR no Code.gs
 
 /* ======= HELPERS de API (CORS simples) ======= */
 async function apiGet(params){
@@ -102,8 +100,8 @@ async function apiPost(obj){
     headers: { "Content-Type":"text/plain;charset=UTF-8" }, // só este header!
     body: JSON.stringify({
       ...obj,
-      role: "servidor",        // manda no BODY
-      secret: "depep2025"      // idem
+      role: ROLE,     // vai no body
+      secret: SECRET  // vai no body
     })
   });
   const j = await r.json().catch(()=>({status:"erro",mensagem:"Falha JSON"}));
@@ -113,7 +111,7 @@ async function apiPost(obj){
 
 /* ======= Validação básica de horário ======= */
 function insideBusiness(hhmm){
-  // retorna true se 09:00 <= hh:mm <= 19:00
+  // true se 09:00 <= hh:mm <= 19:00
   const [h,m] = hhmm.split(":").map(Number);
   const min   = h*60+m;
   return (min >= 9*60) && (min <= 19*60);
@@ -122,7 +120,7 @@ function fmtRange(date, start, end){
   return `${date} ${start}–${end}`;
 }
 
-/* ======= Ações UI ======= */
+/* ======= Ações UI (botão Criar) ======= */
 document.getElementById("btnCreate").onclick = async ()=>{
   const nome  = document.getElementById("nome").value.trim();
   const date  = document.getElementById("date").value;            // yyyy-MM-dd
@@ -198,7 +196,7 @@ let calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
       calendar.unselect();
       return;
     }
-    const date = sel.startStr.substring(0,10);
+    const date  = sel.startStr.substring(0,10);
     const start = sel.startStr.substring(11,16);
     const end   = sel.endStr.substring(11,16);
 
@@ -256,7 +254,7 @@ calendar.render();
 /* ======= Modal helpers ======= */
 function openEvt(){ document.getElementById('evtModal').classList.add('active'); }
 function closeEvt(){ document.getElementById('evtModal').classList.remove('active'); }
-window.closeEvt = closeEvt; // opcional
+window.closeEvt = closeEvt;
 </script>
 </body>
 </html>
