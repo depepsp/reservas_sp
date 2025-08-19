@@ -16,6 +16,10 @@
   .note { font-size:12px; color:#666; }
   #calendar { max-width: var(--maxw); margin: 12px auto; }
 
+  /* Cinza para fins de semana e dias inválidos */
+  .fc-day-sat, .fc-day-sun { background: #f6f6f6; }
+  .fc-day.disabled-cell { background: #f0f0f0 !important; color:#aaa; }
+
   /* Overlay de carregamento */
   #loading {
     position: fixed; inset: 0; display: none;
@@ -50,6 +54,8 @@
   .panel-ft { padding:12px 16px; border-top:1px solid #eee; text-align:right; display:flex; gap:8px; justify-content:flex-end; }
   .btn { padding:8px 12px; border:1px solid #ddd; background:#f7f7f7; border-radius:6px; cursor:pointer; }
   .btn.primary { background:#f0f6ff; border-color:#c6dafc; }
+  .warn { font-size:12px; color:#555; margin-top:8px; }
+  .ok { color:#0a7a2a; font-weight:700; }
 </style>
 </head>
 <body>
@@ -58,10 +64,10 @@
     <h1>Servidor do Depep — disponibilidade para a Sala de Pesquisadores</h1>
     <p class="rules">
       • Selecione diretamente no calendário para <strong>propor um intervalo</strong>.<br>
-      • Um <strong>popup</strong> abrirá para você informar seu nome e <strong>confirmar</strong> (ou ajustar) o horário.<br>
-      • Período permitido: <strong>dias úteis</strong> de <strong>09:00</strong> às <strong>19:00</strong>, de hoje até <strong>+60 dias</strong>.
+      • Um <strong>popup</strong> abrirá para informar seu nome, <strong>confirmar</strong> (ou ajustar) o horário e, opcionalmente, marcar <em>recorrência semanal</em>.<br>
+      • Permitido: <strong>dias úteis</strong>, de <strong>09:00</strong> às <strong>19:00</strong>, de hoje até <strong>+60 dias</strong>. Fins de semana ficam cinza e são bloqueados.
     </p>
-    <p class="note">A grade e os campos sempre usam intervalos de 30 minutos.</p>
+    <p class="note">Após salvar, você receberá um <strong>token</strong> para editar/cancelar sua reserva depois. Guarde-o com cuidado.</p>
   </div>
 </header>
 
@@ -82,17 +88,18 @@
     </div>
     <div class="panel-bd" id="evtBody"></div>
     <div class="panel-ft">
-      <button class="btn" onclick="closeEvt()">OK</button>
+      <button class="btn" id="btnEvtCancel">Cancelar</button>
+      <button class="btn primary" id="btnEvtEdit">Editar</button>
     </div>
   </div>
 </div>
 
-<!-- Modal de confirmação/edição (seleção no calendário) -->
+<!-- Modal de confirmação/edição (seleção no calendário ou editar evento) -->
 <div id="newModal" class="modal" aria-hidden="true">
   <div class="backdrop" onclick="closeNew()"></div>
   <div class="panel" role="dialog" aria-modal="true">
     <div class="panel-hd">
-      <h3 class="panel-tt">Confirmar reserva do Servidor</h3>
+      <h3 class="panel-tt" id="newTitle">Confirmar reserva do Servidor</h3>
       <button class="btn" onclick="closeNew()" aria-label="Fechar">Fechar</button>
     </div>
     <div class="panel-bd">
@@ -102,7 +109,7 @@
           <input id="newNome" placeholder="Ex.: Maria Silva">
         </label>
       </div>
-      <div class="row">
+      <div class="row" style="margin-bottom:10px;">
         <label>Início
           <select id="newStart"></select>
         </label>
@@ -110,7 +117,24 @@
           <select id="newEnd"></select>
         </label>
       </div>
-      <div class="note" style="margin-top:10px;">Ajuste os horários se necessário antes de confirmar.</div>
+
+      <!-- Recorrência (apenas criação; não aparece no modo edição) -->
+      <div class="row" id="recRow" style="margin-top:4px;">
+        <label style="flex-direction:row; align-items:center; gap:8px; margin-top:6px;">
+          <input type="checkbox" id="chkRec"> Recorrência semanal (mesmo dia/horário até +60 dias)
+        </label>
+      </div>
+
+      <!-- Campo Token (apenas no modo edição/cancelamento) -->
+      <div class="row" id="tokenRow" style="display:none; margin-top:6px;">
+        <label>Token do evento
+          <input id="tokenInput" placeholder="Cole seu token aqui">
+        </label>
+      </div>
+
+      <div class="warn" id="tokenWarn" style="display:none;">
+        Para editar/cancelar é necessário o token do evento (ele é mostrado ao criar o evento).
+      </div>
     </div>
     <div class="panel-ft">
       <button class="btn" onclick="closeNew()">Cancelar</button>
@@ -121,7 +145,7 @@
 
 <script>
 /* ======= CONFIG ======= */
-const WEB_APP_URL  = "https://script.google.com/macros/s/AKfycbxjozQ0uqsL1brvYl9o3C5qmQRLvBSj-5OANkCabVuNQdWzzqV2gXWOHp6ZMA1ekFeD/exec"; // <-- TROQUE pelo /exec
+const WEB_APP_URL  = "https://script.google.com/macros/s/SEU_DEPLOY_ID/exec"; // <-- TROQUE pelo /exec
 const HORIZON_DAYS = 60;
 const OPEN_MIN  = 9*60;   // 09:00
 const CLOSE_MIN = 19*60;  // 19:00
@@ -140,7 +164,7 @@ function addDaysYMD(ymd, days){
   const [Y,M,D] = ymd.split('-').map(Number);
   const d = new Date(Y, M-1, D);
   d.setDate(d.getDate()+days);
-  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${d.getDate().toString().padStart(2,'0')}`;
 }
 function toBR(dateObj){
   const d = dateObj;
@@ -159,6 +183,18 @@ function buildHalfHourOptions(select, startMin=OPEN_MIN, endMin=CLOSE_MIN){
     opt.textContent = opt.value;
     select.appendChild(opt);
   }
+}
+function weekdayIndexJS(d){ // 0=Dom..6=Sáb
+  return d.getDay();
+}
+function weekdayIndexFCToPattern(jsDay){
+  // mapeia JS (1..5 úteis) para seu back (1=Seg..5=Sex). Retorna null para fds.
+  const map = {1:1, 2:2, 3:3, 4:4, 5:5};
+  return map[jsDay] || null;
+}
+function isWeekend(dateObj){
+  const d = dateObj.getDay();
+  return d === 0 || d === 6;
 }
 
 /* ======= API (CORS simples) ======= */
@@ -179,12 +215,15 @@ async function apiPost(obj){
   return j;
 }
 
-/* ======= Calendário ======= */
+/* ======= Datas válidas ======= */
 const minYMD = todayYMD();
 const maxYMD = addDaysYMD(minYMD, HORIZON_DAYS);
 
-let pendingSelection = null; // { ymd, startMin, endMin }
+/* ======= Estado para modais ======= */
+let pendingSelection = null; // { ymd, jsDate, startMin, endMin }
+let editingEvent = null;     // { id, ymd, jsDate }
 
+/* ======= Calendário ======= */
 let calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
   initialView: 'timeGridWeek',
   locale: 'pt-br',
@@ -202,6 +241,16 @@ let calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
   selectable: true,
   selectMirror: true,
   validRange: { start: minYMD, end: maxYMD },
+  businessHours: { daysOfWeek: [1,2,3,4,5], startTime: '09:00', endTime: '19:00' }, // úteis
+
+  dayCellClassNames: (arg)=>{
+    // marca fim de semana como "disabled-cell"
+    const d = arg.date;
+    let classes = [];
+    if (isWeekend(d)) classes.push('disabled-cell');
+    // datas fora do range já são bloqueadas por validRange
+    return classes;
+  },
 
   headerToolbar: {
     left: 'prev,next today',
@@ -224,22 +273,26 @@ let calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
     }
   },
 
+  // Impede seleção em fins de semana (e fora do range)
   selectAllow: (sel)=>{
+    const start = new Date(sel.start);
     const ymd = sel.startStr.substring(0,10);
     if (ymd < minYMD || ymd > maxYMD) return false;
+    if (isWeekend(start)) return false;
     return true;
   },
 
   // Seleção → abre modal de confirmação (não cria automaticamente)
   select: (sel)=>{
-    const start = new Date(sel.start);
-    const end   = new Date(sel.end);
+    const sDate = new Date(sel.start);
+    const eDate = new Date(sel.end);
 
-    const startMin = clampToGrid(start.getHours()*60 + start.getMinutes());
-    const endMin   = clampToGrid(end.getHours()*60   + end.getMinutes());
+    const startMin = clampToGrid(sDate.getHours()*60 + sDate.getMinutes());
+    const endMin   = clampToGrid(eDate.getHours()*60   + eDate.getMinutes());
 
     const ymd = sel.startStr.substring(0,10);
-    document.getElementById('newDate').innerHTML = `<strong>Data:</strong> ${toBR(start)}`;
+    document.getElementById('newTitle').textContent = "Confirmar reserva do Servidor";
+    document.getElementById('newDate').innerHTML = `<strong>Data:</strong> ${toBR(sDate)}`;
 
     const sEl = document.getElementById('newStart');
     const eEl = document.getElementById('newEnd');
@@ -250,10 +303,17 @@ let calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
 
     document.getElementById('newNome').value = ""; // exigir nome a cada criação
 
-    pendingSelection = { ymd, sEl, eEl };
+    // mostra controles de criação
+    document.getElementById('recRow').style.display = 'flex';
+    document.getElementById('tokenRow').style.display = 'none';
+    document.getElementById('tokenWarn').style.display = 'none';
+
+    pendingSelection = { ymd, jsDate: sDate, sEl, eEl };
+    editingEvent = null;
     openNew();
   },
 
+  // Clique em evento → mostra detalhes + Editar/Cancelar
   eventClick: (info)=>{
     const ev = info.event;
     const t  = ev.title || "";
@@ -270,8 +330,69 @@ let calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
       `<div><strong>Data:</strong> ${toBR(dt)}</div>
        <div><strong>Horário:</strong> ${hIni} – ${hFim}</div>
        <div><strong>Tipo:</strong> ${tipo}</div>
-       <div><strong>Nome:</strong> ${nome}</div>`;
+       <div><strong>Nome:</strong> ${nome}</div>
+       <div class="warn" style="margin-top:8px;">Para editar ou cancelar você precisará do <strong>token</strong> mostrado na criação do evento.</div>`;
     openEvt();
+
+    // preparar ações
+    document.getElementById('btnEvtEdit').onclick = ()=>{
+      closeEvt();
+      // abre modal no modo EDIÇÃO
+      document.getElementById('newTitle').textContent = "Editar reserva do Servidor";
+      document.getElementById('newDate').innerHTML = `<strong>Data:</strong> ${toBR(dt)}`;
+
+      const sEl = document.getElementById('newStart');
+      const eEl = document.getElementById('newEnd');
+      buildHalfHourOptions(sEl);
+      buildHalfHourOptions(eEl);
+      sEl.value = hIni;
+      eEl.value = hFim;
+
+      document.getElementById('newNome').value = nome; // opcional
+
+      // mostra campos de token / esconde recorrência
+      document.getElementById('recRow').style.display = 'none';
+      document.getElementById('tokenRow').style.display = 'flex';
+      document.getElementById('tokenWarn').style.display = 'block';
+
+      editingEvent = { id: ev.id, ymd: `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}`, jsDate: dt };
+      pendingSelection = null;
+      openNew();
+
+      // Confirmar vira UPDATE
+      document.getElementById('btnConfirmNew').onclick = async ()=>{
+        const token = (document.getElementById('tokenInput').value || '').trim();
+        const start = sEl.value;
+        const end   = eEl.value;
+        if (!token){ alert("Informe o token para editar."); return; }
+        if (start >= end){ alert("Início deve ser antes do término."); return; }
+        try{
+          setLoading(true);
+          await apiPost({ action:"update", id: editingEvent.id, token, start, end });
+          await calendar.refetchEvents();
+          closeNew();
+        }catch(e){
+          alert("Falha ao editar: " + e.message);
+        }finally{
+          setLoading(false);
+        }
+      };
+    };
+
+    document.getElementById('btnEvtCancel').onclick = async ()=>{
+      const token = prompt("Informe o token do evento para cancelar:", "");
+      if (!token) return;
+      try{
+        setLoading(true);
+        await apiPost({ action:"delete", id: ev.id, token: token.trim() });
+        await calendar.refetchEvents();
+        closeEvt();
+      }catch(e){
+        alert("Falha ao cancelar: " + e.message);
+      }finally{
+        setLoading(false);
+      }
+    };
   }
 });
 calendar.render();
@@ -284,11 +405,16 @@ function openNew(){ document.getElementById('newModal').classList.add('active');
 function closeNew(){
   document.getElementById('newModal').classList.remove('active');
   pendingSelection = null;
+  editingEvent = null;
   calendar.unselect();
 }
+
+/* ======= Confirmar (CRIAÇÃO) ======= */
 document.getElementById('btnConfirmNew').onclick = async ()=>{
+  // somente quando estamos no modo CRIAÇÃO (pendingSelection ativo)
   if (!pendingSelection) return;
-  const { ymd, sEl, eEl } = pendingSelection;
+  const { ymd, jsDate, sEl, eEl } = pendingSelection;
+
   const nome  = document.getElementById('newNome').value.trim();
   const start = sEl.value;
   const end   = eEl.value;
@@ -296,9 +422,48 @@ document.getElementById('btnConfirmNew').onclick = async ()=>{
   if (!nome){ alert("Informe seu nome."); return; }
   if (start >= end){ alert("Início deve ser antes do término."); return; }
 
+  const recWeekly = document.getElementById('chkRec').checked;
+
   try{
     setLoading(true);
-    await apiPost({ action:"create", tipo:"Servidor do Depep", nome, date: ymd, start, end });
+
+    // criação simples
+    const res = await apiPost({ action:"create", tipo:"Servidor do Depep", nome, date: ymd, start, end });
+    // espera: {status:"ok", id, token}
+    if (res && res.token){
+      alert(`Evento criado! Guarde seu token:\n\n${res.token}`);
+      // mostra também no topo do modal de detalhes da criação?
+    }
+
+    // recorrência semanal (mesmo dia/horário) — opcional
+    if (recWeekly){
+      // dia da semana JS (1..5 úteis)
+      const jsDow = weekdayIndexJS(jsDate); // 1=Seg..5=Sex
+      const patDow = weekdayIndexFCToPattern(jsDow);
+      if (patDow){
+        try{
+          await apiPost({
+            action: "createSeries",
+            pattern: { from: ymd, to: maxYMD, byWeekday: [patDow] },
+            start, end, nome
+          });
+        }catch(seriesErr){
+          // fallback: cliente cria por semana (7 em 7 dias) até maxYMD
+          let cur = new Date(jsDate);
+          while (true){
+            cur.setDate(cur.getDate()+7);
+            const y = cur.getFullYear(), m = pad(cur.getMonth()+1), d = pad(cur.getDate());
+            const nextYMD = `${y}-${m}-${d}`;
+            if (nextYMD > maxYMD) break;
+            // evita finais de semana (não deve ocorrer se foi seg-sex +7, mas garantimos)
+            if (!isWeekend(cur)){
+              try{ await apiPost({ action:"create", tipo:"Servidor do Depep", nome, date: nextYMD, start, end }); }catch(_e){}
+            }
+          }
+        }
+      }
+    }
+
     await calendar.refetchEvents();
     closeNew();
   }catch(e){
