@@ -9,25 +9,25 @@
 <style>
   :root { --maxw: 1100px; }
   body { font-family: Arial, sans-serif; margin:0; background:#fff; color:#111; }
-  header { padding:14px 16px; border-bottom:1px solid #eee; }
-  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 16px; }
-  h1 { font-size:18px; margin:0 0 6px 0; }
-  .rules { font-size:14px; color:#333; margin:0 0 10px 0; }
-  .note { font-size:12px; color:#666; }
-  #calendar { max-width: var(--maxw); margin: 12px auto; }
+  header { padding:12px 16px; border-bottom:1px solid #eee; }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 8px 16px; }
+  #calendar { max-width: var(--maxw); margin: 12px auto 24px; }
 
-  /* Cinza para fins de semana e dias inválidos */
-  .fc-day-sat, .fc-day-sun { background: #f6f6f6; }
-  .fc-day.disabled-cell { background: #f0f0f0 !important; color:#aaa; }
+  .rules {
+    background:#fafafa; border:1px solid #e6e6e6; border-radius:8px; padding:12px; font-size:14px;
+  }
+  .rules h3 { margin:0 0 6px 0; font-size:16px; }
+  .rules ul { margin:6px 0 0 18px; padding:0; }
+  .rules li { margin:4px 0; }
 
-  /* Overlay de carregamento */
+  /* Overlay de carregamento (na frente de tudo) */
   #loading {
-    position: fixed; inset: 0; display: none;
+    position: fixed; inset: 0;
+    background: rgba(255,255,255,0.75);
+    display: none;
     align-items: center; justify-content: center;
-    background: rgba(255,255,255,.8);
-    z-index: 99999;
+    font-weight: 600; z-index: 99999; pointer-events: all;
     backdrop-filter: blur(1px);
-    font-weight: 600; color:#333;
   }
   .spinner {
     width: 28px; height: 28px; border: 3px solid #ccc;
@@ -35,166 +35,131 @@
     animation: spin 0.9s linear infinite; margin-right: 10px;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+  #loading .wrap-loading { display: flex; align-items: center; font-size: 16px; color: #333; }
 
-  /* Modal generics */
-  .modal { position: fixed; inset: 0; display:none; z-index: 9999; }
-  .modal.active { display:block; }
-  .modal .backdrop { position:absolute; inset:0; background:rgba(0,0,0,.35); }
-  .modal .panel {
+  /* Modal de confirmação */
+  #evtModal { position: fixed; inset: 0; display:none; z-index: 9999; }
+  #evtModal.active { display:block; }
+  #evtModal .backdrop { position:absolute; inset:0; background:rgba(0,0,0,.35); }
+  #evtModal .panel {
     position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
-    width:min(92vw, 560px); background:#fff; border-radius:10px;
+    width:min(92vw, 520px); background:#fff; border-radius:10px;
     box-shadow:0 12px 28px rgba(0,0,0,.2); overflow:hidden;
   }
   .panel-hd { padding:12px 16px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center; }
   .panel-tt { margin:0; font-weight:700; font-size:16px; }
   .panel-bd { padding:14px 16px; font-size:14px; }
-  .panel-bd .row { display:flex; gap:10px; flex-wrap:wrap; align-items:end; }
-  .panel-bd label { display:flex; flex-direction:column; font-size:13px; }
-  .panel-bd input, .panel-bd select { padding:8px; }
   .panel-ft { padding:12px 16px; border-top:1px solid #eee; text-align:right; display:flex; gap:8px; justify-content:flex-end; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:end; }
+  label { display:flex; flex-direction:column; font-size:13px; }
+  input[type="text"], input[type="date"], input[type="time"] { padding:8px; }
+
   .btn { padding:8px 12px; border:1px solid #ddd; background:#f7f7f7; border-radius:6px; cursor:pointer; }
   .btn.primary { background:#f0f6ff; border-color:#c6dafc; }
-  .warn { font-size:12px; color:#555; margin-top:8px; }
-  .ok { color:#0a7a2a; font-weight:700; }
+  .btn.danger  { background:#ffecec; border-color:#ffd0d0; }
+
+  /* Cinza para fins de semana e dias passados */
+  .fc-day-past { filter: grayscale(1); opacity: .5; }
+  .disabled-day { background: #f6f6f6 !important; color:#aaa; }
 </style>
 </head>
 <body>
-<header>
-  <div class="wrap">
-    <h1>Servidor do Depep — disponibilidade para a Sala de Pesquisadores</h1>
-    <p class="rules">
-      • Selecione diretamente no calendário para <strong>propor um intervalo</strong>.<br>
-      • Um <strong>popup</strong> abrirá para informar seu nome, <strong>confirmar</strong> (ou ajustar) o horário e, opcionalmente, marcar <em>recorrência semanal</em>.<br>
-      • Permitido: <strong>dias úteis</strong>, de <strong>09:00</strong> às <strong>19:00</strong>, de hoje até <strong>+60 dias</strong>. Fins de semana ficam cinza e são bloqueados.
-    </p>
-    <p class="note">Após salvar, você receberá um <strong>token</strong> para editar/cancelar sua reserva depois. Guarde-o com cuidado.</p>
+<header class="wrap">
+  <div class="rules">
+    <h3>Servidor do Depep — informe sua disponibilidade</h3>
+    <ul>
+      <li>Agendamentos apenas em <strong>dias úteis</strong>, de <strong>09:00 às 19:00</strong>, em intervalos de <strong>30 minutos</strong>.</li>
+      <li>Selecione uma faixa no calendário para <strong>pré-agendar</strong>. No pop-up, informe seu nome, ajuste horários e confirme.</li>
+      <li>Opcional: marque <strong>Recorrência semanal</strong> para repetir no mesmo dia/horário até uma data limite (máx. 60 dias).</li>
+      <li>Após criar, será exibido um <strong>token</strong>. Guarde-o para eventuais edições/cancelamentos futuros.</li>
+    </ul>
   </div>
 </header>
+
+<div id="calendar" class="wrap"></div>
 
 <!-- Overlay de carregamento -->
 <div id="loading" aria-live="polite" aria-busy="true">
   <div class="wrap-loading"><div class="spinner"></div>Carregando…</div>
 </div>
 
-<div id="calendar" class="wrap"></div>
-
-<!-- Modal de detalhes (clique no evento) -->
-<div id="evtModal" class="modal" aria-hidden="true">
+<!-- Modal de confirmação -->
+<div id="evtModal" aria-hidden="true">
   <div class="backdrop" onclick="closeEvt()"></div>
   <div class="panel" role="dialog" aria-modal="true">
     <div class="panel-hd">
-      <h3 class="panel-tt" id="evtTitle">Detalhes do evento</h3>
+      <h3 class="panel-tt">Confirmar disponibilidade (Servidor)</h3>
       <button class="btn" onclick="closeEvt()" aria-label="Fechar">Fechar</button>
     </div>
-    <div class="panel-bd" id="evtBody"></div>
-    <div class="panel-ft">
-      <button class="btn" id="btnEvtCancel">Cancelar</button>
-      <button class="btn primary" id="btnEvtEdit">Editar</button>
-    </div>
-  </div>
-</div>
-
-<!-- Modal de confirmação/edição (seleção no calendário ou editar evento) -->
-<div id="newModal" class="modal" aria-hidden="true">
-  <div class="backdrop" onclick="closeNew()"></div>
-  <div class="panel" role="dialog" aria-modal="true">
-    <div class="panel-hd">
-      <h3 class="panel-tt" id="newTitle">Confirmar reserva do Servidor</h3>
-      <button class="btn" onclick="closeNew()" aria-label="Fechar">Fechar</button>
-    </div>
     <div class="panel-bd">
-      <div id="newDate" style="margin-bottom:10px;"><strong>Data:</strong> —</div>
-      <div class="row" style="margin-bottom:10px;">
-        <label>Seu nome
-          <input id="newNome" placeholder="Ex.: Maria Silva">
+      <div class="row" style="margin-bottom:8px;">
+        <label>Seu nome (Servidor)
+          <input id="evtNome" type="text" placeholder="Ex.: Maria Silva">
         </label>
       </div>
-      <div class="row" style="margin-bottom:10px;">
+      <div class="row">
+        <label>Data
+          <input id="evtDate" type="date" readonly>
+        </label>
         <label>Início
-          <select id="newStart"></select>
+          <input id="evtStart" type="time" step="1800">
         </label>
         <label>Fim
-          <select id="newEnd"></select>
+          <input id="evtEnd" type="time" step="1800">
         </label>
       </div>
-
-      <!-- Recorrência (apenas criação; não aparece no modo edição) -->
-      <div class="row" id="recRow" style="margin-top:4px;">
-        <label style="flex-direction:row; align-items:center; gap:8px; margin-top:6px;">
-          <input type="checkbox" id="chkRec"> Recorrência semanal (mesmo dia/horário até +60 dias)
+      <div class="row" style="margin-top:8px;">
+        <label style="flex-direction:row; align-items:center; gap:8px; font-size:14px;">
+          <input type="checkbox" id="evtRecur">
+          Recorrência semanal até:
         </label>
+        <input id="evtRecurUntil" type="date" disabled>
       </div>
-
-      <!-- Campo Token (apenas no modo edição/cancelamento) -->
-      <div class="row" id="tokenRow" style="display:none; margin-top:6px;">
-        <label>Token do evento
-          <input id="tokenInput" placeholder="Cole seu token aqui">
-        </label>
-      </div>
-
-      <div class="warn" id="tokenWarn" style="display:none;">
-        Para editar/cancelar é necessário o token do evento (ele é mostrado ao criar o evento).
+      <div class="hint" style="margin-top:6px; font-size:12px; color:#666;">
+        Dica: limite de 60 dias a partir de hoje. Horários permitidos: 09:00–19:00.
       </div>
     </div>
     <div class="panel-ft">
-      <button class="btn" onclick="closeNew()">Cancelar</button>
-      <button class="btn primary" id="btnConfirmNew">Confirmar</button>
+      <button class="btn" onclick="closeEvt()">Cancelar</button>
+      <button class="btn primary" id="btnConfirm">Confirmar</button>
     </div>
   </div>
 </div>
 
 <script>
 /* ======= CONFIG ======= */
-const WEB_APP_URL  = "https://script.google.com/macros/s/AKfycbxjozQ0uqsL1brvYl9o3C5qmQRLvBSj-5OANkCabVuNQdWzzqV2gXWOHp6ZMA1ekFeD/exec"; // <-- TROQUE pelo /exec
+const WEB_APP_URL  = "https://script.google.com/macros/s/AKfycbxjozQ0uqsL1brvYl9o3C5qmQRLvBSj-5OANkCabVuNQdWzzqV2gXWOHp6ZMA1ekFeD/exec"; // <-- SUBSTITUA pela URL /exec atual
 const HORIZON_DAYS = 60;
-const OPEN_MIN  = 9*60;   // 09:00
-const CLOSE_MIN = 19*60;  // 19:00
 
 /* ======= Overlay ======= */
 const loadingEl = document.getElementById('loading');
-function setLoading(on){ loadingEl.style.display = on ? 'flex' : 'none'; }
+function setLoading(on){
+  loadingEl.style.display = on ? 'flex' : 'none';
+  document.body.style.cursor = on ? 'progress' : 'default';
+}
 
 /* ======= Helpers ======= */
-function pad(n){ return String(n).padStart(2,'0'); }
-function todayYMD(){
-  const d = new Date(); d.setHours(0,0,0,0);
-  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+function todayYmd(){
+  const d=new Date(); d.setHours(0,0,0,0);
+  return d.toISOString().substring(0,10);
 }
-function addDaysYMD(ymd, days){
-  const [Y,M,D] = ymd.split('-').map(Number);
-  const d = new Date(Y, M-1, D);
-  d.setDate(d.getDate()+days);
-  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${d.getDate().toString().padStart(2,'0')}`;
+function addDaysYmd(ymd, days){
+  const d = new Date(ymd+"T00:00:00"); d.setDate(d.getDate()+days);
+  return d.toISOString().substring(0,10);
 }
-function toBR(dateObj){
-  const d = dateObj;
-  return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}`;
+function withinHorizon(ymd){
+  const t = todayYmd();
+  const mx = addDaysYmd(t, HORIZON_DAYS);
+  return (ymd >= t && ymd <= mx);
 }
-function minutesToHHMM(min){
-  const h = Math.floor(min/60), m = min%60;
-  return `${pad(h)}:${pad(m)}`;
+function isBusinessDay(dateObj){
+  const w = dateObj.getDay();
+  return w>=1 && w<=5;
 }
-function clampToGrid(min){ return Math.round(min/30)*30; } // múltiplos de 30
-function buildHalfHourOptions(select, startMin=OPEN_MIN, endMin=CLOSE_MIN){
-  select.innerHTML = "";
-  for (let m = startMin; m <= endMin; m += 30){
-    const opt = document.createElement("option");
-    opt.value = minutesToHHMM(m);
-    opt.textContent = opt.value;
-    select.appendChild(opt);
-  }
-}
-function weekdayIndexJS(d){ // 0=Dom..6=Sáb
-  return d.getDay();
-}
-function weekdayIndexFCToPattern(jsDay){
-  // mapeia JS (1..5 úteis) para seu back (1=Seg..5=Sex). Retorna null para fds.
-  const map = {1:1, 2:2, 3:3, 4:4, 5:5};
-  return map[jsDay] || null;
-}
-function isWeekend(dateObj){
-  const d = dateObj.getDay();
-  return d === 0 || d === 6;
+function insideBusiness(hhmm){
+  const [h,m]=hhmm.split(":").map(Number);
+  const tot=h*60+m;
+  return tot>=9*60 && tot<=19*60;
 }
 
 /* ======= API (CORS simples) ======= */
@@ -206,8 +171,8 @@ async function apiGet(params){
 }
 async function apiPost(obj){
   const r = await fetch(WEB_APP_URL, {
-    method: "POST",
-    headers: { "Content-Type":"text/plain;charset=UTF-8" },
+    method:"POST",
+    headers:{ "Content-Type":"text/plain;charset=UTF-8" },
     body: JSON.stringify(obj)
   });
   const j = await r.json().catch(()=>({status:"erro",mensagem:"Falha JSON"}));
@@ -215,13 +180,28 @@ async function apiPost(obj){
   return j;
 }
 
-/* ======= Datas válidas ======= */
-const minYMD = todayYMD();
-const maxYMD = addDaysYMD(minYMD, HORIZON_DAYS);
+/* ======= Modal ======= */
+const evtModal      = document.getElementById('evtModal');
+const fldNome       = document.getElementById('evtNome');
+const fldDate       = document.getElementById('evtDate');
+const fldStart      = document.getElementById('evtStart');
+const fldEnd        = document.getElementById('evtEnd');
+const chkRecur      = document.getElementById('evtRecur');
+const fldRecurUntil = document.getElementById('evtRecurUntil');
+const btnConfirm    = document.getElementById('btnConfirm');
 
-/* ======= Estado para modais ======= */
-let pendingSelection = null; // { ymd, jsDate, startMin, endMin }
-let editingEvent = null;     // { id, ymd, jsDate }
+function openEvt(){ evtModal.classList.add('active'); }
+function closeEvt(){ evtModal.classList.remove('active'); }
+window.closeEvt = closeEvt;
+
+chkRecur.addEventListener('change', ()=>{
+  fldRecurUntil.disabled = !chkRecur.checked;
+  if (chkRecur.checked){
+    fldRecurUntil.min = fldDate.value;
+    fldRecurUntil.max = addDaysYmd(todayYmd(), HORIZON_DAYS);
+    if (!fldRecurUntil.value) fldRecurUntil.value = fldRecurUntil.min;
+  }
+});
 
 /* ======= Calendário ======= */
 let calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
@@ -235,36 +215,52 @@ let calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
   slotMinTime: "09:00:00",
   slotMaxTime: "19:00:00",
   slotDuration: "00:30:00",
-  slotLabelInterval: "00:30",
-  slotLabelFormat: { hour: '2-digit', minute: '2-digit', hour12: false },
   snapDuration: "00:30:00",
+  businessHours: {
+    // cinza fora do horário útil; mantém fins de semana visíveis porém não selecionáveis
+    daysOfWeek: [1,2,3,4,5],
+    startTime: "09:00",
+    endTime:   "19:00"
+  },
   selectable: true,
   selectMirror: true,
-  validRange: { start: minYMD, end: maxYMD },
-  businessHours: { daysOfWeek: [1,2,3,4,5], startTime: '09:00', endTime: '19:00' }, // úteis
-
-  dayCellClassNames: (arg)=>{
-    // marca fim de semana como "disabled-cell"
-    const d = arg.date;
-    let classes = [];
-    if (isWeekend(d)) classes.push('disabled-cell');
-    // datas fora do range já são bloqueadas por validRange
-    return classes;
-  },
-
   headerToolbar: {
     left: 'prev,next today',
     center: 'title',
     right: 'timeGridWeek,timeGridDay,dayGridMonth'
   },
 
+  /* Bloqueia seleção em fins de semana, dias passados e fora do horizonte/horário */
+  selectAllow: (sel)=>{
+    const s = sel.start;
+    const e = sel.end;
+    const ymd = s.toISOString().substring(0,10);
+    const h1  = s.toTimeString().substring(0,5);
+    const h2  = e.toTimeString().substring(0,5);
+    const isBus = isBusinessDay(s);
+    const isFuture = ymd >= todayYmd();
+    return isBus && isFuture && withinHorizon(ymd) && insideBusiness(h1) && insideBusiness(h2) && (h1 < h2);
+  },
+
+  /* Cinza para sábados/domingos e dias passados */
+  dayCellClassNames: (arg)=>{
+    const classes = [];
+    const d = arg.date;
+    const isWeekend = (d.getDay()===0 || d.getDay()===6);
+    const ymd = d.toISOString().substring(0,10);
+    if (isWeekend) classes.push('disabled-day');
+    if (ymd < todayYmd()) classes.push('fc-day-past');
+    return classes;
+  },
+
+  /* Eventos: carrega via GET list */
   events: async (info, success, failure)=>{
     try{
       setLoading(true);
       const s = info.startStr.substring(0,10);
       const e = info.endStr.substring(0,10);
       const data = await apiGet({ action:"list", start:s, end:e });
-      success(Array.isArray(data.events) ? data.events : []);
+      success(Array.isArray(data.payload?.events) ? data.payload.events : []);
     }catch(err){
       console.error(err);
       failure(err);
@@ -273,215 +269,97 @@ let calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
     }
   },
 
-  // Impede seleção em fins de semana (e fora do range)
-  selectAllow: (sel)=>{
-    const start = new Date(sel.start);
-    const ymd = sel.startStr.substring(0,10);
-    if (ymd < minYMD || ymd > maxYMD) return false;
-    if (isWeekend(start)) return false;
-    return true;
-  },
-
-  // Seleção → abre modal de confirmação (não cria automaticamente)
+  /* Seleção → abre modal de confirmação */
   select: (sel)=>{
-    const sDate = new Date(sel.start);
-    const eDate = new Date(sel.end);
-
-    const startMin = clampToGrid(sDate.getHours()*60 + sDate.getMinutes());
-    const endMin   = clampToGrid(eDate.getHours()*60   + eDate.getMinutes());
-
     const ymd = sel.startStr.substring(0,10);
-    document.getElementById('newTitle').textContent = "Confirmar reserva do Servidor";
-    document.getElementById('newDate').innerHTML = `<strong>Data:</strong> ${toBR(sDate)}`;
+    const hs  = sel.startStr.substring(11,16);
+    const he  = sel.endStr.substring(11,16);
 
-    const sEl = document.getElementById('newStart');
-    const eEl = document.getElementById('newEnd');
-    buildHalfHourOptions(sEl);
-    buildHalfHourOptions(eEl);
-    sEl.value = minutesToHHMM(Math.max(OPEN_MIN, startMin));
-    eEl.value = minutesToHHMM(Math.min(CLOSE_MIN, endMin));
-
-    document.getElementById('newNome').value = ""; // exigir nome a cada criação
-
-    // mostra controles de criação
-    document.getElementById('recRow').style.display = 'flex';
-    document.getElementById('tokenRow').style.display = 'none';
-    document.getElementById('tokenWarn').style.display = 'none';
-
-    pendingSelection = { ymd, jsDate: sDate, sEl, eEl };
-    editingEvent = null;
-    openNew();
+    fldDate.value  = ymd;
+    fldStart.value = hs;
+    fldEnd.value   = he;
+    fldNome.value  = "";
+    chkRecur.checked = false;
+    fldRecurUntil.disabled = true;
+    openEvt();
   },
 
-  // Clique em evento → mostra detalhes + Editar/Cancelar
+  /* Clique no evento → mostra detalhes simples (sem editar/cancelar por token agora) */
   eventClick: (info)=>{
     const ev = info.event;
-    const t  = ev.title || "";
-    let tipo = (ev.extendedProps && ev.extendedProps.tipo) || (t.toLowerCase().startsWith("depep -") ? "Servidor do Depep" : "Pesquisador");
-    let nome = (ev.extendedProps && ev.extendedProps.nome) || t.replace(/^Depep -\s*/i,"").replace(/^Pesquisador -\s*/i,"");
-
     const dt = new Date(ev.start);
     const de = new Date(ev.end);
-    const hIni = `${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
-    const hFim = `${pad(de.getHours())}:${pad(de.getMinutes())}`;
-
-    document.getElementById('evtTitle').textContent = t || "Evento";
-    document.getElementById('evtBody').innerHTML =
-      `<div><strong>Data:</strong> ${toBR(dt)}</div>
-       <div><strong>Horário:</strong> ${hIni} – ${hFim}</div>
-       <div><strong>Tipo:</strong> ${tipo}</div>
-       <div><strong>Nome:</strong> ${nome}</div>
-       <div class="warn" style="margin-top:8px;">Para editar ou cancelar você precisará do <strong>token</strong> mostrado na criação do evento.</div>`;
-    openEvt();
-
-    // preparar ações
-    document.getElementById('btnEvtEdit').onclick = ()=>{
-      closeEvt();
-      // abre modal no modo EDIÇÃO
-      document.getElementById('newTitle').textContent = "Editar reserva do Servidor";
-      document.getElementById('newDate').innerHTML = `<strong>Data:</strong> ${toBR(dt)}`;
-
-      const sEl = document.getElementById('newStart');
-      const eEl = document.getElementById('newEnd');
-      buildHalfHourOptions(sEl);
-      buildHalfHourOptions(eEl);
-      sEl.value = hIni;
-      eEl.value = hFim;
-
-      document.getElementById('newNome').value = nome; // opcional
-
-      // mostra campos de token / esconde recorrência
-      document.getElementById('recRow').style.display = 'none';
-      document.getElementById('tokenRow').style.display = 'flex';
-      document.getElementById('tokenWarn').style.display = 'block';
-
-      editingEvent = { id: ev.id, ymd: `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}`, jsDate: dt };
-      pendingSelection = null;
-      openNew();
-
-      // Confirmar vira UPDATE
-      document.getElementById('btnConfirmNew').onclick = async ()=>{
-        const token = (document.getElementById('tokenInput').value || '').trim();
-        const start = sEl.value;
-        const end   = eEl.value;
-        if (!token){ alert("Informe o token para editar."); return; }
-        if (start >= end){ alert("Início deve ser antes do término."); return; }
-        try{
-          setLoading(true);
-          await apiPost({ action:"update", id: editingEvent.id, token, start, end });
-          await calendar.refetchEvents();
-          closeNew();
-        }catch(e){
-          alert("Falha ao editar: " + e.message);
-        }finally{
-          setLoading(false);
-        }
-      };
-    };
-
-    document.getElementById('btnEvtCancel').onclick = async ()=>{
-      const token = prompt("Informe o token do evento para cancelar:", "");
-      if (!token) return;
-      try{
-        setLoading(true);
-        await apiPost({ action:"delete", id: ev.id, token: token.trim() });
-        await calendar.refetchEvents();
-        closeEvt();
-      }catch(e){
-        alert("Falha ao cancelar: " + e.message);
-      }finally{
-        setLoading(false);
-      }
-    };
+    const pad = n=>String(n).padStart(2,'0');
+    const dataBR = `${pad(dt.getDate())}/${pad(dt.getMonth()+1)}/${dt.getFullYear()}`;
+    const hIni   = `${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+    const hFim   = `${pad(de.getHours())}:${pad(de.getMinutes())}`;
+    alert(`${ev.title}\n${dataBR} ${hIni}–${hFim}`);
   }
 });
 calendar.render();
 
-/* ======= Modais ======= */
-function openEvt(){ document.getElementById('evtModal').classList.add('active'); }
-function closeEvt(){ document.getElementById('evtModal').classList.remove('active'); }
-
-function openNew(){ document.getElementById('newModal').classList.add('active'); }
-function closeNew(){
-  document.getElementById('newModal').classList.remove('active');
-  pendingSelection = null;
-  editingEvent = null;
-  calendar.unselect();
-}
-
-/* ======= Confirmar (CRIAÇÃO) ======= */
-document.getElementById('btnConfirmNew').onclick = async ()=>{
-  // somente quando estamos no modo CRIAÇÃO (pendingSelection ativo)
-  if (!pendingSelection) return;
-  const { ymd, jsDate, sEl, eEl } = pendingSelection;
-
-  const nome  = document.getElementById('newNome').value.trim();
-  const start = sEl.value;
-  const end   = eEl.value;
+/* ======= Confirmar criação (única ou recorrente) ======= */
+btnConfirm.onclick = async ()=>{
+  const nome  = fldNome.value.trim();
+  const date  = fldDate.value;
+  const start = fldStart.value;
+  const end   = fldEnd.value;
 
   if (!nome){ alert("Informe seu nome."); return; }
-  if (start >= end){ alert("Início deve ser antes do término."); return; }
+  if (!insideBusiness(start) || !insideBusiness(end)){ alert("Horário fora de 09:00–19:00."); return; }
+  if (!(start < end)){ alert("Início deve ser antes do término."); return; }
+  if (!withinHorizon(date)){ alert("Data fora do horizonte de 60 dias."); return; }
 
-  const recWeekly = document.getElementById('chkRec').checked;
+  const isRecur = chkRecur.checked;
+  const until   = fldRecurUntil.value;
 
   try{
     setLoading(true);
 
-    // criação simples
-    const res = await apiPost({
-  action: "create",
-  tipo:   "Servidor do Depep",
-  nome, date, start, end
-});
-calendar.refetchEvents();
-const token = (res && res.payload && res.payload.token) ? res.payload.token : "(sem token)";
-alert("Evento criado!\n\n" +
-      `Data/Horário: ${date} ${start}–${end}\n` +
-      `Token para editar/cancelar: ${token}\n\n` +
-      "Guarde esse token.");
+    if (!isRecur){
+      // Único
+      const res = await apiPost({ action:"create", tipo:"Servidor do Depep", nome, date, start, end });
+      const token = res?.payload?.token || "(sem token)";
+      alert(`Evento criado!\n\n${date} ${start}–${end}\nToken: ${token}\n\nGuarde esse token.`);
+    } else {
+      if (!until){ alert("Informe a data limite da recorrência."); setLoading(false); return; }
+      if (!withinHorizon(until)){ alert("A data limite excede o horizonte de 60 dias."); setLoading(false); return; }
 
+      // Série semanal no mesmo dia da semana e horário
+      let created = 0, failed = 0;
+      const first = new Date(date+"T00:00:00");
+      const weekday = first.getDay(); // 1..5
 
-    // recorrência semanal (mesmo dia/horário) — opcional
-    if (recWeekly){
-      // dia da semana JS (1..5 úteis)
-      const jsDow = weekdayIndexJS(jsDate); // 1=Seg..5=Sex
-      const patDow = weekdayIndexFCToPattern(jsDow);
-      if (patDow){
+      // gera datas semana a semana
+      for (let d = new Date(date+"T00:00:00"); d.toISOString().substring(0,10) <= until; d.setDate(d.getDate()+7)){
+        if (d.getDay() !== weekday) continue;
+        const y = d.toISOString().substring(0,10);
+        if (!withinHorizon(y)) break;
+
         try{
-          await apiPost({
-            action: "createSeries",
-            pattern: { from: ymd, to: maxYMD, byWeekday: [patDow] },
-            start, end, nome
-          });
-        }catch(seriesErr){
-          // fallback: cliente cria por semana (7 em 7 dias) até maxYMD
-          let cur = new Date(jsDate);
-          while (true){
-            cur.setDate(cur.getDate()+7);
-            const y = cur.getFullYear(), m = pad(cur.getMonth()+1), d = pad(cur.getDate());
-            const nextYMD = `${y}-${m}-${d}`;
-            if (nextYMD > maxYMD) break;
-            // evita finais de semana (não deve ocorrer se foi seg-sex +7, mas garantimos)
-            if (!isWeekend(cur)){
-              try{ await apiPost({ action:"create", tipo:"Servidor do Depep", nome, date: nextYMD, start, end }); }catch(_e){}
-            }
+          const res = await apiPost({ action:"create", tipo:"Servidor do Depep", nome, date:y, start, end });
+          created++;
+          // mostra o token do primeiro como referência
+          if (created===1){
+            const token = res?.payload?.token || "(sem token)";
+            alert(`Primeiro evento criado em ${y} ${start}–${end}\nToken: ${token}\n(um token é gerado por ocorrência; guarde o de cada confirmação exibida)`);
           }
+        }catch(e){
+          console.warn("Falha na ocorrência de", y, e);
+          failed++;
         }
       }
+      alert(`Série semanal concluída.\nCriados: ${created}\nFalhas: ${failed}`);
     }
 
-    await calendar.refetchEvents();
-    closeNew();
+    calendar.refetchEvents();
+    closeEvt();
   }catch(e){
     alert("Falha ao criar: " + e.message);
   }finally{
     setLoading(false);
   }
 };
-
-/* Expor se quiser */
-window.closeEvt = closeEvt;
-window.closeNew = closeNew;
 </script>
 </body>
 </html>
