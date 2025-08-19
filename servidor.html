@@ -9,356 +9,170 @@
 <style>
   :root { --maxw: 1100px; }
   body { font-family: Arial, sans-serif; margin:0; background:#fff; color:#111; }
-  header { padding:12px 16px; border-bottom:1px solid #eee; }
+  header { padding:12px 16px; border-bottom:1px solid #eee; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   .wrap { max-width: var(--maxw); margin: 0 auto; padding: 8px 16px; }
-  #calendar { max-width: var(--maxw); margin: 12px auto 24px; }
+  #calendar { max-width: var(--maxw); margin: 12px auto; }
 
-  .rules {
-    background:#fafafa; border:1px solid #e6e6e6; border-radius:8px; padding:12px; font-size:14px;
+  /* Overlay carregando */
+  #loadingOverlay {
+    display:none; position:fixed; inset:0; background:rgba(255,255,255,0.8);
+    z-index:9999; align-items:center; justify-content:center; font-size:20px; font-weight:600;
   }
-  .rules h3 { margin:0 0 6px 0; font-size:16px; }
-  .rules ul { margin:6px 0 0 18px; padding:0; }
-  .rules li { margin:4px 0; }
 
-  /* Overlay de carregamento (na frente de tudo) */
-  #loading {
-    position: fixed; inset: 0;
-    background: rgba(255,255,255,0.75);
-    display: none;
-    align-items: center; justify-content: center;
-    font-weight: 600; z-index: 99999; pointer-events: all;
-    backdrop-filter: blur(1px);
-  }
-  .spinner {
-    width: 28px; height: 28px; border: 3px solid #ccc;
-    border-top-color: #555; border-radius: 50%;
-    animation: spin 0.9s linear infinite; margin-right: 10px;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  #loading .wrap-loading { display: flex; align-items: center; font-size: 16px; color: #333; }
-
-  /* Modal de confirmação */
+  /* Modal simples */
   #evtModal { position: fixed; inset: 0; display:none; z-index: 9999; }
-  #evtModal.active { display:block; }
-  #evtModal .backdrop { position:absolute; inset:0; background:rgba(0,0,0,.35); }
+  #evtModal.active { display:flex; align-items:center; justify-content:center; }
   #evtModal .panel {
-    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
-    width:min(92vw, 520px); background:#fff; border-radius:10px;
+    width:min(92vw, 480px); background:#fff; border-radius:10px;
     box-shadow:0 12px 28px rgba(0,0,0,.2); overflow:hidden;
   }
   .panel-hd { padding:12px 16px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center; }
   .panel-tt { margin:0; font-weight:700; font-size:16px; }
-  .panel-bd { padding:14px 16px; font-size:14px; }
-  .panel-ft { padding:12px 16px; border-top:1px solid #eee; text-align:right; display:flex; gap:8px; justify-content:flex-end; }
-  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:end; }
-  label { display:flex; flex-direction:column; font-size:13px; }
-  input[type="text"], input[type="date"], input[type="time"] { padding:8px; }
-
+  .panel-bd { padding:14px 16px; font-size:14px; display:flex; flex-direction:column; gap:8px; }
+  .panel-ft { padding:12px 16px; border-top:1px solid #eee; text-align:right; }
   .btn { padding:8px 12px; border:1px solid #ddd; background:#f7f7f7; border-radius:6px; cursor:pointer; }
   .btn.primary { background:#f0f6ff; border-color:#c6dafc; }
-  .btn.danger  { background:#ffecec; border-color:#ffd0d0; }
-
-  /* Cinza para fins de semana e dias passados */
-  .fc-day-past { filter: grayscale(1); opacity: .5; }
-  .disabled-day { background: #f6f6f6 !important; color:#aaa; }
 </style>
 </head>
 <body>
 <header class="wrap">
-  <div class="rules">
-    <h3>Servidor do Depep — informe sua disponibilidade</h3>
-    <ul>
-      <li>Agendamentos apenas em <strong>dias úteis</strong>, de <strong>09:00 às 19:00</strong>, em intervalos de <strong>30 minutos</strong>.</li>
-      <li>Selecione uma faixa no calendário para <strong>pré-agendar</strong>. No pop-up, informe seu nome, ajuste horários e confirme.</li>
-      <li>Opcional: marque <strong>Recorrência semanal</strong> para repetir no mesmo dia/horário até uma data limite (máx. 60 dias).</li>
-      <li>Após criar, será exibido um <strong>token</strong>. Guarde-o para eventuais edições/cancelamentos futuros.</li>
-    </ul>
-  </div>
+  <strong>Servidor do Depep</strong> – informe sua disponibilidade para receber pesquisadores externos no BC.<br>
+  <span class="hint">Regras: agendamentos apenas de hoje até 60 dias à frente, em dias úteis, entre 09:00 e 19:00, com intervalos de 30 minutos.</span>
 </header>
 
 <div id="calendar" class="wrap"></div>
 
 <!-- Overlay de carregamento -->
-<div id="loading" aria-live="polite" aria-busy="true">
-  <div class="wrap-loading"><div class="spinner"></div>Carregando…</div>
-</div>
+<div id="loadingOverlay">Carregando...</div>
 
 <!-- Modal de confirmação -->
 <div id="evtModal" aria-hidden="true">
-  <div class="backdrop" onclick="closeEvt()"></div>
   <div class="panel" role="dialog" aria-modal="true">
     <div class="panel-hd">
-      <h3 class="panel-tt">Confirmar disponibilidade (Servidor)</h3>
-      <button class="btn" onclick="closeEvt()" aria-label="Fechar">Fechar</button>
+      <h3 class="panel-tt">Confirmar agendamento</h3>
+      <button class="btn" onclick="closeEvt()">Fechar</button>
     </div>
     <div class="panel-bd">
-      <div class="row" style="margin-bottom:8px;">
-        <label>Seu nome (Servidor)
-          <input id="evtNome" type="text" placeholder="Ex.: Maria Silva">
-        </label>
-      </div>
-      <div class="row">
-        <label>Data
-          <input id="evtDate" type="date" readonly>
-        </label>
-        <label>Início
-          <input id="evtStart" type="time" step="1800">
-        </label>
-        <label>Fim
-          <input id="evtEnd" type="time" step="1800">
-        </label>
-      </div>
-      <div class="row" style="margin-top:8px;">
-        <label style="flex-direction:row; align-items:center; gap:8px; font-size:14px;">
-          <input type="checkbox" id="evtRecur">
-          Recorrência semanal até:
-        </label>
-        <input id="evtRecurUntil" type="date" disabled>
-      </div>
-      <div class="hint" style="margin-top:6px; font-size:12px; color:#666;">
-        Dica: limite de 60 dias a partir de hoje. Horários permitidos: 09:00–19:00.
-      </div>
+      <label>Nome do servidor:
+        <input id="nomeServidor" placeholder="Digite seu nome">
+      </label>
+      <div id="resumoReserva"></div>
+      <label><input type="checkbox" id="recorrente"> Repetir semanalmente</label>
     </div>
     <div class="panel-ft">
       <button class="btn" onclick="closeEvt()">Cancelar</button>
-      <button class="btn primary" id="btnConfirm">Confirmar</button>
+      <button class="btn primary" id="btnConfirmar">Confirmar</button>
     </div>
   </div>
 </div>
 
 <script>
 /* ======= CONFIG ======= */
-const WEB_APP_URL  = "https://script.google.com/macros/s/AKfycbxjozQ0uqsL1brvYl9o3C5qmQRLvBSj-5OANkCabVuNQdWzzqV2gXWOHp6ZMA1ekFeD/exec"; // <-- SUBSTITUA pela URL /exec atual
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxjozQ0uqsL1brvYl9o3C5qmQRLvBSj-5OANkCabVuNQdWzzqV2gXWOHp6ZMA1ekFeD/exec"; // <-- substitua
 const HORIZON_DAYS = 60;
 
-/* ======= Overlay ======= */
-const loadingEl = document.getElementById('loading');
-function setLoading(on){
-  loadingEl.style.display = on ? 'flex' : 'none';
-  document.body.style.cursor = on ? 'progress' : 'default';
+/* ======= HELPERS ======= */
+function showLoading(on){
+  document.getElementById('loadingOverlay').style.display = on ? 'flex':'none';
 }
-
-/* ======= Helpers ======= */
-function todayYmd(){
-  const d=new Date(); d.setHours(0,0,0,0);
-  return d.toISOString().substring(0,10);
-}
-function addDaysYmd(ymd, days){
-  const d = new Date(ymd+"T00:00:00"); d.setDate(d.getDate()+days);
-  return d.toISOString().substring(0,10);
-}
-function withinHorizon(ymd){
-  const t = todayYmd();
-  const mx = addDaysYmd(t, HORIZON_DAYS);
-  return (ymd >= t && ymd <= mx);
-}
-function isBusinessDay(dateObj){
-  const w = dateObj.getDay();
-  return w>=1 && w<=5;
-}
-function insideBusiness(hhmm){
-  const [h,m]=hhmm.split(":").map(Number);
-  const tot=h*60+m;
-  return tot>=9*60 && tot<=19*60;
-}
-
-/* ======= API (CORS simples) ======= */
 async function apiGet(params){
   const qs = new URLSearchParams(params).toString();
-  const r = await fetch(`${WEB_APP_URL}?${qs}`, { method:"GET" });
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const r = await fetch(`${WEB_APP_URL}?${qs}`);
   return await r.json();
 }
 async function apiPost(obj){
-  const r = await fetch(WEB_APP_URL, {
+  const r = await fetch(WEB_APP_URL,{
     method:"POST",
-    headers:{ "Content-Type":"text/plain;charset=UTF-8" },
+    headers:{"Content-Type":"text/plain;charset=UTF-8"},
     body: JSON.stringify(obj)
   });
-  const j = await r.json().catch(()=>({status:"erro",mensagem:"Falha JSON"}));
-  if (!r.ok || j.status==="erro") throw new Error(j.mensagem || (`HTTP ${r.status}`));
-  return j;
+  return await r.json();
 }
 
-/* ======= Modal ======= */
-const evtModal      = document.getElementById('evtModal');
-const fldNome       = document.getElementById('evtNome');
-const fldDate       = document.getElementById('evtDate');
-const fldStart      = document.getElementById('evtStart');
-const fldEnd        = document.getElementById('evtEnd');
-const chkRecur      = document.getElementById('evtRecur');
-const fldRecurUntil = document.getElementById('evtRecurUntil');
-const btnConfirm    = document.getElementById('btnConfirm');
-
-function openEvt(){ evtModal.classList.add('active'); }
-function closeEvt(){ evtModal.classList.remove('active'); }
-window.closeEvt = closeEvt;
-
-chkRecur.addEventListener('change', ()=>{
-  fldRecurUntil.disabled = !chkRecur.checked;
-  if (chkRecur.checked){
-    fldRecurUntil.min = fldDate.value;
-    fldRecurUntil.max = addDaysYmd(todayYmd(), HORIZON_DAYS);
-    if (!fldRecurUntil.value) fldRecurUntil.value = fldRecurUntil.min;
-  }
-});
+/* ======= Modal helpers ======= */
+let pendingSel = null;
+function openEvt(sel){
+  pendingSel = sel;
+  const d = new Date(sel.start);
+  const de= new Date(sel.end);
+  const pad=n=>String(n).padStart(2,"0");
+  const resumo = `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}–${pad(de.getHours())}:${pad(de.getMinutes())}`;
+  document.getElementById("resumoReserva").textContent = resumo;
+  document.getElementById("evtModal").classList.add("active");
+}
+function closeEvt(){
+  document.getElementById("evtModal").classList.remove("active");
+  pendingSel=null;
+}
 
 /* ======= Calendário ======= */
 let calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
-  initialView: 'timeGridWeek',
-  locale: 'pt-br',
-  height: 'auto',
-  nowIndicator: true,
-  expandRows: true,
-  firstDay: 1,
-  allDaySlot: false,
-  slotMinTime: "09:00:00",
-  slotMaxTime: "19:00:00",
-  slotDuration: "00:30:00",
-  snapDuration: "00:30:00",
-  businessHours: {
-    // cinza fora do horário útil; mantém fins de semana visíveis porém não selecionáveis
-    daysOfWeek: [1,2,3,4,5],
-    startTime: "09:00",
-    endTime:   "19:00"
+  initialView:'timeGridWeek',
+  locale:'pt-br',
+  height:'auto',
+  nowIndicator:true,
+  expandRows:true,
+  firstDay:1,
+  allDaySlot:false,
+  slotMinTime:"09:00:00",
+  slotMaxTime:"19:00:00",
+  slotDuration:"00:30:00",
+  snapDuration:"00:30:00",
+  selectable:true,
+  selectMirror:true,
+  validRange:{
+    start: new Date().toISOString().split("T")[0],
+    end: new Date(Date.now()+HORIZON_DAYS*86400000).toISOString().split("T")[0]
   },
-  selectable: true,
-  selectMirror: true,
-  headerToolbar: {
-    left: 'prev,next today',
-    center: 'title',
-    right: 'timeGridWeek,timeGridDay,dayGridMonth'
+  businessHours:{
+    daysOfWeek:[1,2,3,4,5],
+    startTime:"09:00",
+    endTime:"19:00"
   },
-
-  /* Bloqueia seleção em fins de semana, dias passados e fora do horizonte/horário */
-  selectAllow: (sel)=>{
-    const s = sel.start;
-    const e = sel.end;
-    const ymd = s.toISOString().substring(0,10);
-    const h1  = s.toTimeString().substring(0,5);
-    const h2  = e.toTimeString().substring(0,5);
-    const isBus = isBusinessDay(s);
-    const isFuture = ymd >= todayYmd();
-    return isBus && isFuture && withinHorizon(ymd) && insideBusiness(h1) && insideBusiness(h2) && (h1 < h2);
+  headerToolbar:{
+    left:'prev,next today',
+    center:'title',
+    right:'timeGridWeek,timeGridDay,dayGridMonth'
   },
-
-  /* Cinza para sábados/domingos e dias passados */
-  dayCellClassNames: (arg)=>{
-    const classes = [];
-    const d = arg.date;
-    const isWeekend = (d.getDay()===0 || d.getDay()===6);
-    const ymd = d.toISOString().substring(0,10);
-    if (isWeekend) classes.push('disabled-day');
-    if (ymd < todayYmd()) classes.push('fc-day-past');
-    return classes;
-  },
-
-  /* Eventos: carrega via GET list */
   events: async (info, success, failure)=>{
     try{
-      setLoading(true);
-      const s = info.startStr.substring(0,10);
-      const e = info.endStr.substring(0,10);
-      const data = await apiGet({ action:"list", start:s, end:e });
-      success(Array.isArray(data.payload?.events) ? data.payload.events : []);
-    }catch(err){
-      console.error(err);
-      failure(err);
-    }finally{
-      setLoading(false);
-    }
+      showLoading(true);
+      const data = await apiGet({
+        action:"list",
+        start: info.startStr.substring(0,10),
+        end:   info.endStr.substring(0,10)
+      });
+      success(Array.isArray(data.events)?data.events:[]);
+    }catch(err){failure(err);}finally{showLoading(false);}
   },
-
-  /* Seleção → abre modal de confirmação */
-  select: (sel)=>{
-    const ymd = sel.startStr.substring(0,10);
-    const hs  = sel.startStr.substring(11,16);
-    const he  = sel.endStr.substring(11,16);
-
-    fldDate.value  = ymd;
-    fldStart.value = hs;
-    fldEnd.value   = he;
-    fldNome.value  = "";
-    chkRecur.checked = false;
-    fldRecurUntil.disabled = true;
-    openEvt();
-  },
-
-  /* Clique no evento → mostra detalhes simples (sem editar/cancelar por token agora) */
-  eventClick: (info)=>{
-    const ev = info.event;
-    const dt = new Date(ev.start);
-    const de = new Date(ev.end);
-    const pad = n=>String(n).padStart(2,'0');
-    const dataBR = `${pad(dt.getDate())}/${pad(dt.getMonth()+1)}/${dt.getFullYear()}`;
-    const hIni   = `${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
-    const hFim   = `${pad(de.getHours())}:${pad(de.getMinutes())}`;
-    alert(`${ev.title}\n${dataBR} ${hIni}–${hFim}`);
-  }
+  select: (sel)=>{ openEvt(sel); }
 });
 calendar.render();
 
-/* ======= Confirmar criação (única ou recorrente) ======= */
-btnConfirm.onclick = async ()=>{
-  const nome  = fldNome.value.trim();
-  const date  = fldDate.value;
-  const start = fldStart.value;
-  const end   = fldEnd.value;
+/* ======= Confirmar agendamento ======= */
+document.getElementById("btnConfirmar").onclick = async ()=>{
+  const nome = document.getElementById("nomeServidor").value.trim();
+  const rec  = document.getElementById("recorrente").checked;
+  if (!nome){alert("Informe seu nome.");return;}
+  if (!pendingSel){closeEvt();return;}
 
-  if (!nome){ alert("Informe seu nome."); return; }
-  if (!insideBusiness(start) || !insideBusiness(end)){ alert("Horário fora de 09:00–19:00."); return; }
-  if (!(start < end)){ alert("Início deve ser antes do término."); return; }
-  if (!withinHorizon(date)){ alert("Data fora do horizonte de 60 dias."); return; }
-
-  const isRecur = chkRecur.checked;
-  const until   = fldRecurUntil.value;
+  const d=pendingSel.start, de=pendingSel.end;
+  const date = d.toISOString().substring(0,10);
+  const start= d.toTimeString().substring(0,5);
+  const end  = de.toTimeString().substring(0,5);
 
   try{
-    setLoading(true);
-
-    if (!isRecur){
-      // Único
-      const res = await apiPost({ action:"create", tipo:"Servidor do Depep", nome, date, start, end });
-      const token = res?.payload?.token || "(sem token)";
-      alert(`Evento criado!\n\n${date} ${start}–${end}\nToken: ${token}\n\nGuarde esse token.`);
-    } else {
-      if (!until){ alert("Informe a data limite da recorrência."); setLoading(false); return; }
-      if (!withinHorizon(until)){ alert("A data limite excede o horizonte de 60 dias."); setLoading(false); return; }
-
-      // Série semanal no mesmo dia da semana e horário
-      let created = 0, failed = 0;
-      const first = new Date(date+"T00:00:00");
-      const weekday = first.getDay(); // 1..5
-
-      // gera datas semana a semana
-      for (let d = new Date(date+"T00:00:00"); d.toISOString().substring(0,10) <= until; d.setDate(d.getDate()+7)){
-        if (d.getDay() !== weekday) continue;
-        const y = d.toISOString().substring(0,10);
-        if (!withinHorizon(y)) break;
-
-        try{
-          const res = await apiPost({ action:"create", tipo:"Servidor do Depep", nome, date:y, start, end });
-          created++;
-          // mostra o token do primeiro como referência
-          if (created===1){
-            const token = res?.payload?.token || "(sem token)";
-            alert(`Primeiro evento criado em ${y} ${start}–${end}\nToken: ${token}\n(um token é gerado por ocorrência; guarde o de cada confirmação exibida)`);
-          }
-        }catch(e){
-          console.warn("Falha na ocorrência de", y, e);
-          failed++;
-        }
-      }
-      alert(`Série semanal concluída.\nCriados: ${created}\nFalhas: ${failed}`);
-    }
-
+    showLoading(true);
+    const r = await apiPost({
+      action:"create",
+      tipo:"Servidor do Depep",
+      nome, date, start, end,
+      recorrente: rec
+    });
+    alert("Reserva criada. Token: "+r.token);
     calendar.refetchEvents();
-    closeEvt();
-  }catch(e){
-    alert("Falha ao criar: " + e.message);
-  }finally{
-    setLoading(false);
-  }
+  }catch(e){alert("Falha ao criar: "+e.message);}
+  finally{showLoading(false);closeEvt();}
 };
 </script>
 </body>
