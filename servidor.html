@@ -7,153 +7,255 @@
 <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
 <style>
-  :root { --maxw: 1100px; }
-  body { font-family: Arial, sans-serif; margin:0; background:#fff; }
-  header { padding:12px 16px; border-bottom:1px solid #eee; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 8px 16px; }
-  .box { border:1px solid #ddd; padding:10px; border-radius:8px; background:#fafafa; }
-  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:end; }
-  label { display:flex; flex-direction:column; font-size:13px; min-width: 180px; }
-  input, button { padding:8px; }
-  button { cursor:pointer; }
-  #calendar { max-width: var(--maxw); margin: 12px auto; }
-  .hint { font-size:12px; color:#666; }
-  .ok { color:#0a7a0a; }
-  .err { color:#b00020; }
+:root { --maxw: 1100px; }
+body { font-family: Arial, sans-serif; margin:0; background:#fff; color:#111; }
+header { padding:12px 16px; border-bottom:1px solid #eee; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.wrap { max-width: var(--maxw); margin: 0 auto; padding: 8px 16px; }
+.box { border:1px solid #ddd; padding:10px; border-radius:8px; background:#fafafa; }
+.row { display:flex; gap:10px; flex-wrap:wrap; align-items:end; }
+label { display:flex; flex-direction:column; font-size:13px; }
+input, select, button { padding:8px; }
+button { cursor:pointer; }
+.hint { font-size:12px; color:#666; }
+#calendar { max-width: var(--maxw); margin: 12px auto; }
+
+/* Modal simples p/ detalhes do evento */
+#evtModal { position: fixed; inset: 0; display:none; z-index: 9999; }
+#evtModal.active { display:block; }
+#evtModal .backdrop { position:absolute; inset:0; background:rgba(0,0,0,.35); }
+#evtModal .panel {
+position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+width:min(92vw, 520px); background:#fff; border-radius:10px;
+box-shadow:0 12px 28px rgba(0,0,0,.2); overflow:hidden;
+}
+.panel-hd { padding:12px 16px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center; }
+.panel-tt { margin:0; font-weight:700; font-size:16px; }
+.panel-bd { padding:14px 16px; font-size:14px; }
+.panel-ft { padding:12px 16px; border-top:1px solid #eee; text-align:right; }
+.btn { padding:8px 12px; border:1px solid #ddd; background:#f7f7f7; border-radius:6px; cursor:pointer; }
+.btn.primary { background:#f0f6ff; border-color:#c6dafc; }
 </style>
 </head>
 <body>
 <header class="wrap">
-  <strong>Servidor – Calendário da Sala (09:00–19:00)</strong>
-  <span class="hint">Crie eventos para servidores (regras de horário e dia útil ativas).</span>
+<strong>Servidor – Calendário da Sala (09:00–19:00)</strong>
+<span class="hint">Crie eventos únicos ou selecione faixas no calendário (intervalo de 30 min).</span>
 </header>
 
 <section class="wrap">
-  <div class="box" style="margin-bottom:12px;">
-    <div class="row">
-      <label>Seu nome
-        <input id="nome" placeholder="Ex.: Maria Silva">
-      </label>
-      <label>Data
-        <input id="date" type="date">
-      </label>
-      <label>Início
-        <input id="start" type="time" value="09:00" step="1800">
-      </label>
-      <label>Fim
-        <input id="end" type="time" value="10:00" step="1800">
-      </label>
-      <button id="btnCreate">Criar (Servidor)</button>
-    </div>
-    <div id="msg" class="hint" style="margin-top:6px;"></div>
-  </div>
+<div class="box" style="margin-bottom:12px;">
+<div class="row">
+<label>Seu nome
+<input id="nome" placeholder="Ex.: Maria Silva">
+</label>
+<label>Data
+<input id="date" type="date">
+</label>
+<label>Início
+<input id="start" type="time" value="09:00" step="1800">
+</label>
+<label>Fim
+<input id="end" type="time" value="10:00" step="1800">
+</label>
+<button id="btnCreate" class="btn primary">Criar (Servidor)</button>
+</div>
+<div class="hint" style="margin-top:6px;">Dica: o horário permitido é 09:00–19:00. O intervalo mínimo exibido é de 30 minutos (você pode digitar minutos “quebrados”, se necessário).</div>
+</div>
 </section>
 
 <div id="calendar" class="wrap"></div>
 
-<script>
-/* Cole aqui o URL /exec da sua implantação */
-const WEB_APP_URL = "https://script.google.com/macros/s/SEU_DEPLOY_ID/exec";
+<!-- Modal de detalhes -->
+<div id="evtModal" aria-hidden="true">
+<div class="backdrop" onclick="closeEvt()"></div>
+<div class="panel" role="dialog" aria-modal="true">
+<div class="panel-hd">
+<h3 class="panel-tt" id="evtTitle">Detalhes do evento</h3>
+<button class="btn" onclick="closeEvt()" aria-label="Fechar">Fechar</button>
+</div>
+<div class="panel-bd" id="evtBody">
+<!-- preenchido via JS -->
+</div>
+<div class="panel-ft">
+<button class="btn" onclick="closeEvt()">OK</button>
+</div>
+</div>
+</div>
 
-/* ===== helpers de chamada (sem preflight) ===== */
+<script>
+/* ======= CONFIG ======= */
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxjozQ0uqsL1brvYl9o3C5qmQRLvBSj-5OANkCabVuNQdWzzqV2gXWOHp6ZMA1ekFeD/exec"; // <-- SUBSTITUA pela URL /exec do Apps Script
+const ROLE = "servidor";
+const SECRET = "depep2025"; // igual ao SECRET_SERVIDOR do back
+
+/* ======= HELPERS de API (CORS simples) ======= */
 async function apiGet(params){
-  const url = WEB_APP_URL + "?" + new URLSearchParams(params).toString();
-  const r = await fetch(url, { method:"GET" });
-  if (!r.ok) throw new Error("HTTP "+r.status);
-  return await r.json();
+const qs = new URLSearchParams(params).toString();
+const r = await fetch(`${WEB_APP_URL}?${qs}`, { method:"GET" });
+if (!r.ok) throw new Error(`HTTP ${r.status}`);
+return await r.json();
 }
 async function apiPost(obj){
-  const r = await fetch(WEB_APP_URL, {
-    method:"POST",
-    headers:{ "Content-Type":"text/plain;charset=UTF-8" }, // simples
-    body: JSON.stringify(obj)
-  });
-  const j = await r.json().catch(()=>({status:"erro",mensagem:"Falha JSON"}));
-  if (!r.ok || j.status==="erro") throw new Error(j.mensagem || ("HTTP "+r.status));
-  return j;
+const r = await fetch(WEB_APP_URL, {
+method:"POST",
+headers:{
+"Content-Type":"text/plain;charset=UTF-8", // evita preflight
+"X-Role": ROLE,
+"X-Secret": SECRET
+},
+body: JSON.stringify(obj)
+});
+const j = await r.json().catch(()=>({status:"erro",mensagem:"Falha JSON"}));
+if (!r.ok || j.status==="erro") throw new Error(j.mensagem || (`HTTP ${r.status}`));
+return j;
 }
 
-const $ = (id)=>document.getElementById(id);
-const msg = $("msg");
+/* ======= Validação básica de horário ======= */
+function insideBusiness(hhmm){
+// retorna true se 09:00 <= hh:mm <= 19:00
+const [h,m] = hhmm.split(":").map(Number);
+const min = h*60+m;
+return (min >= 9*60) && (min <= 19*60);
+}
+function fmtRange(date, start, end){
+return `${date} ${start}–${end}`;
+}
 
-/* ===== criação via formulário ===== */
-$("btnCreate").onclick = async ()=>{
-  msg.className = "hint";
-  msg.textContent = "";
-  const nome  = $("nome").value.trim();
-  const date  = $("date").value;
-  const start = $("start").value;
-  const end   = $("end").value;
-  if (!nome||!date||!start||!end){
-    msg.className = "hint err";
-    msg.textContent = "Preencha nome, data, início e fim.";
-    return;
-  }
-  try{
-    await apiPost({
-      action: "create",
-      tipo:   "Servidor",      // o backend normaliza para "Servidor do Depep"
-      nome, date, start, end
-    });
-    msg.className = "hint ok";
-    msg.textContent = "Reserva criada com sucesso.";
-    calendar.refetchEvents();
-  }catch(e){
-    msg.className = "hint err";
-    msg.textContent = e.message;
-  }
+/* ======= Ações UI ======= */
+document.getElementById("btnCreate").onclick = async ()=>{
+const nome = document.getElementById("nome").value.trim();
+const date = document.getElementById("date").value; // yyyy-MM-dd
+const start = document.getElementById("start").value; // HH:mm
+const end = document.getElementById("end").value; // HH:mm
+
+if (!nome || !date || !start || !end){
+alert("Preencha nome/data/início/fim.");
+return;
+}
+if (!insideBusiness(start) || !insideBusiness(end)){
+alert("Horário fora do intervalo permitido (09:00–19:00).");
+return;
+}
+if (start >= end){
+alert("Início deve ser antes do término.");
+return;
+}
+
+try{
+await apiPost({
+action: "create",
+tipo: "Servidor do Depep",
+nome, date, start, end
+});
+calendar.refetchEvents();
+alert("Evento criado: " + fmtRange(date, start, end));
+}catch(e){
+alert("Falha ao criar: " + e.message);
+}
 };
 
-/* ===== FullCalendar ===== */
+/* ======= Calendário ======= */
 let calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
-  initialView: 'timeGridWeek',
-  slotMinTime: "09:00:00",
-  slotMaxTime: "19:00:00",
-  slotDuration: "00:30:00",     // intervalos de 30 min
-  allDaySlot: false,
-  locale: 'pt-br',
-  height: 'auto',
-  nowIndicator: true,
-  expandRows: true,
-  firstDay: 1,
-  selectable: true,
-  headerToolbar: {
-    left: 'prev,next today',
-    center: 'title',
-    right: 'timeGridWeek,timeGridDay,dayGridMonth'
-  },
-  events: async (info, success, failure)=>{
-    try{
-      // FullCalendar envia ISO; backend espera yyyy-MM-dd
-      const s = info.startStr.substring(0,10);
-      const e = info.endStr.substring(0,10);
-      const data = await apiGet({action:"list", start:s, end:e});
-      success(data.events || []);
-    }catch(err){ failure(err); }
-  },
-  select: async (sel)=>{
-    // criar arrastando/selecionando no grid
-    const nome = $("nome").value.trim();
-    if (!nome){
-      alert("Informe seu nome (campo acima) antes de criar.");
-      calendar.unselect();
-      return;
-    }
-    const ymd = sel.startStr.substring(0,10);
-    const hs  = sel.startStr.substring(11,16);
-    const he  = sel.endStr.substring(11,16);
-    try{
-      await apiPost({ action:"create", tipo:"Servidor", nome, date: ymd, start: hs, end: he });
-      calendar.refetchEvents();
-    }catch(e){ alert(e.message); }
-  },
-  eventClick: async (info)=>{
-    // por enquanto só informativo; rotas de delete/confirm não estão ativas
-    const ev = info.event;
-    alert(`${ev.title}\n${ev.start.toLocaleString()} — ${ev.end.toLocaleString()}`);
-  }
+initialView: 'timeGridWeek',
+locale: 'pt-br',
+height: 'auto',
+nowIndicator: true,
+expandRows: true,
+firstDay: 1,
+allDaySlot: false,
+slotMinTime: "09:00:00",
+slotMaxTime: "19:00:00",
+slotDuration: "00:30:00", // grade de 30 min
+snapDuration: "00:30:00", // seleção “agarra” de 30 em 30
+selectable: true,
+selectMirror: true,
+headerToolbar: {
+left: 'prev,next today',
+center: 'title',
+right: 'timeGridWeek,timeGridDay,dayGridMonth'
+},
+
+// Carrega eventos do Apps Script
+events: async (info, success, failure)=>{
+try{
+const s = info.startStr.substring(0,10);
+const e = info.endStr.substring(0,10);
+const data = await apiGet({ action:"list", start:s, end:e });
+// Backend deve retornar: [{id,title,start,end,backgroundColor,borderColor,extendedProps:{tipo,nome}}]
+success(Array.isArray(data.events) ? data.events : []);
+}catch(err){
+console.error(err);
+failure(err);
+}
+},
+
+// Criação por seleção na grade
+select: async (sel)=>{
+const nome = document.getElementById("nome").value.trim();
+if (!nome){
+alert("Informe seu nome acima antes de criar.");
+calendar.unselect();
+return;
+}
+const date = sel.startStr.substring(0,10);
+const start = sel.startStr.substring(11,16);
+const end = sel.endStr.substring(11,16);
+
+if (!insideBusiness(start) || !insideBusiness(end)){
+alert("Horário fora do intervalo permitido (09:00–19:00).");
+calendar.unselect();
+return;
+}
+if (start >= end){
+alert("Início deve ser antes do término.");
+calendar.unselect();
+return;
+}
+
+try{
+await apiPost({
+action: "create",
+tipo: "Servidor do Depep",
+nome, date, start, end
+});
+calendar.refetchEvents();
+}catch(e){
+alert("Falha ao criar: " + e.message);
+}finally{
+calendar.unselect();
+}
+},
+
+// Clique em evento → mostra detalhes (sem deletar/confirmar por enquanto)
+eventClick: (info)=>{
+const ev = info.event;
+// Se o backend não mandar extendedProps, inferimos pelo título
+const t = ev.title || "";
+let tipo = (ev.extendedProps && ev.extendedProps.tipo) || (t.toLowerCase().startsWith("depep -") ? "Servidor do Depep" : "Pesquisador");
+let nome = (ev.extendedProps && ev.extendedProps.nome) || t.replace(/^Depep -\s*/i,"").replace(/^Pesquisador -\s*/i,"");
+
+const dt = new Date(ev.start);
+const de = new Date(ev.end);
+const pad = n => String(n).padStart(2,'0');
+const dataBR = `${pad(dt.getDate())}/${pad(dt.getMonth()+1)}/${dt.getFullYear()}`;
+const hIni = `${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+const hFim = `${pad(de.getHours())}:${pad(de.getMinutes())}`;
+
+document.getElementById('evtTitle').textContent = t || "Evento";
+document.getElementById('evtBody').innerHTML =
+`<div><strong>Data:</strong> ${dataBR}</div>
+<div><strong>Horário:</strong> ${hIni} – ${hFim}</div>
+<div><strong>Tipo:</strong> ${tipo}</div>
+<div><strong>Nome:</strong> ${nome}</div>`;
+openEvt();
+}
 });
 calendar.render();
+
+/* ======= Modal helpers ======= */
+function openEvt(){ document.getElementById('evtModal').classList.add('active'); }
+function closeEvt(){ document.getElementById('evtModal').classList.remove('active'); }
+window.closeEvt = closeEvt; // opcional
 </script>
 </body>
 </html>
